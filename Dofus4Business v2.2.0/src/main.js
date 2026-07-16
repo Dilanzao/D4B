@@ -1,0 +1,210 @@
+import './styles/reset.css';
+import './styles/variables.css';
+import './styles/layout.css';
+import './styles/components.css';
+import './styles/responsive.css';
+
+import { APP_VERSION, CONSENT_POLICY_VERSION, PIX_KEY } from './config/app.js';
+import { getCreatureById, getCreatureName } from './data/creatures.js';
+import { feedingResources } from './data/feedingResources.js';
+import { renderHeader } from './components/header.js';
+import { renderFooter } from './components/footer.js';
+import { destroyDashboardCharts, mountDashboardCharts, renderDashboard } from './components/dashboard.js';
+import { renderSimulationEditor } from './components/simulationStepper.js';
+import { renderSimulationGallery } from './components/simulationGallery.js';
+import { renderSalesHistory } from './components/salesHistory.js';
+import { renderModal } from './components/modals.js';
+import { adSlot, escapeHtml, icon, t } from './components/common.js';
+import { state, subscribe, emit, setLanguage, setView, setSimulations, setSales, setConsent, setDashboardFilters, openModal, closeModal, showToast } from './state/store.js';
+import { normalizeSimulation, normalizeSale } from './services/storageService.js';
+import { cancelSaleSync, syncSale } from './services/salesService.js';
+import { applyConsent } from './services/consentService.js';
+import { calculateSimulation, calculateSaleProfit } from './utils/calculations.js';
+import { parseKamas } from './utils/currency.js';
+import { createId, nowIso, toIsoLocalDateTime } from './utils/identifiers.js';
+import { validateStep } from './utils/validation.js';
+
+const app = document.querySelector('#app');
+let liveRenderTimer = null;
+
+function scheduleLiveRender(selector, position) {
+  window.clearTimeout(liveRenderTimer);
+  liveRenderTimer = window.setTimeout(() => {
+    emit();
+    requestAnimationFrame(() => {
+      const input = app.querySelector(selector);
+      input?.focus();
+      if (input?.setSelectionRange && Number.isInteger(position)) input.setSelectionRange(position, position);
+    });
+  }, 180);
+}
+
+function newSimulation(base = {}) {
+  const hasTarget = Object.prototype.hasOwnProperty.call(base,'targetLevel');
+  return normalizeSimulation({
+    id: base.id || createId('simulation'), name: base.name || '', creatureType: base.creatureType || 'Mascote',
+    creatureId: base.creatureId || '', creatureCanonicalName: base.creatureCanonicalName || '',
+    creatureImageUrl: base.creatureImageUrl || './assets/placeholders/creature-fallback.svg',
+    originLevel: base.originLevel ?? 0, currentXp: base.currentXp ?? 0, targetLevel: hasTarget ? base.targetLevel : 100,
+    upMethod: base.upMethod ?? '', marketFoodPrice: base.marketFoodPrice ?? 0, bagPrice: base.bagPrice ?? 0,
+    combinedRationSource: base.combinedRationSource || 'vitaminizedFood', resourceLines: Array.isArray(base.resourceLines) ? structuredClone(base.resourceLines) : [],
+    originCost: base.originCost ?? 0, additionalCosts: base.additionalCosts ?? 0,
+    estimatedSalePrice: base.estimatedSalePrice ?? 0, estimatedSaleChannel: base.estimatedSaleChannel || 'Mercado HDV',
+    createdAt: base.createdAt || nowIso(), updatedAt: nowIso()
+  });
+}
+
+function openEditor(simulation, mode = 'new') {
+  const copy = structuredClone(simulation || newSimulation());
+  if (mode === 'duplicate') {
+    copy.id = createId('simulation'); copy.name = copy.name ? `${copy.name} — ${t(state,'common.copySuffix')}` : '';
+    copy.createdAt = nowIso(); copy.updatedAt = nowIso(); copy.status = 'ready'; copy.lastSaleAt = null;
+  }
+  state.simulationEditor = { mode, step:1, maxReached:1, simulation:copy, errors:{}, resourcesOpen:['resources','combined'].includes(copy.upMethod), creatureQuery:'', resourceQuery:'', customResourceOpen:false, comboOpen:false, activeOption:0 };
+  state.view='editor'; emit(); window.scrollTo({top:0,behavior:'smooth'});
+}
+
+function generateSimulationName(sim) {
+  const creature=getCreatureById(sim.creatureId);
+  return sim.name.trim() || `${creature?.canonicalName || sim.creatureCanonicalName} — ${sim.originLevel} → ${sim.targetLevel}`;
+}
+
+function renderView() {
+  if(state.view==='dashboard')return renderDashboard(state);
+  if(state.view==='simulations')return `<section class="stack"><div class="section-head"><div><span class="eyebrow">${escapeHtml(t(state,'nav.simulations'))}</span><h1>${escapeHtml(t(state,'simulations.title'))}</h1><p>${escapeHtml(t(state,'simulations.description'))}</p></div><button class="button primary" data-action="new-simulation">${icon('plus',17)} ${escapeHtml(t(state,'home.newSimulation'))}</button></div>${renderSimulationGallery(state)}</section>`;
+  if(state.view==='sales')return renderSalesHistory(state);
+  if(state.view==='editor'&&state.simulationEditor)return renderSimulationEditor(state);
+  return renderDashboard(state);
+}
+
+function renderCookieBanner() {
+  if(state.consent?.decidedAt)return '';
+  return `<aside class="cookie-banner" aria-label="${escapeHtml(t(state,'consent.title'))}"><div><strong>${escapeHtml(t(state,'consent.title'))}</strong><p class="small">${escapeHtml(t(state,'consent.text'))}</p></div><div class="cookie-actions"><button class="button secondary compact" data-action="consent-reject">${escapeHtml(t(state,'consent.reject'))}</button><button class="button secondary compact" data-action="open-consent">${escapeHtml(t(state,'consent.configure'))}</button><button class="button primary compact" data-action="consent-accept">${escapeHtml(t(state,'consent.acceptAll'))}</button></div></aside>`;
+}
+
+function render() {
+  destroyDashboardCharts();
+  document.documentElement.lang=state.language;
+  document.title=`Dofus4Business v${APP_VERSION}`;
+  app.innerHTML=`<div class="app-shell">${renderHeader(state)}<div class="container">${adSlot('ad-slot-header','header-ad',state)}</div><main id="main-content" class="main"><div class="container">${state.view==='editor'?`<div class="page-grid"><div>${renderView()}</div><aside class="sidebar sticky">${adSlot('ad-slot-sidebar','sidebar-ad',state)}<article class="card section"><span class="eyebrow">${escapeHtml(t(state,'support.title'))}</span><p class="muted small" style="margin-top:8px">${escapeHtml(t(state,'support.text'))}</p><button class="button secondary" style="margin-top:12px" data-action="open-support">${icon('pix',17)} ${escapeHtml(t(state,'support.button'))}</button></article></aside></div>`:renderView()}</div></main>${renderFooter(state)}${renderModal(state)}${state.toast?`<div class="toast ${state.toast.tone==='error'?'error':''}" role="status">${escapeHtml(state.toast.message)}</div>`:''}${renderCookieBanner()}</div>`;
+  requestAnimationFrame(()=>{
+    if(state.modal)app.querySelector('.modal button,.modal input,.modal select')?.focus();
+    mountDashboardCharts(state);
+  });
+}
+
+applyConsent(state.consent);
+subscribe(render);render();
+
+function updateEditorField(field,rawValue,shouldRender=true) {
+  const ed=state.simulationEditor;if(!ed)return;const sim=ed.simulation;
+  const numeric=new Set(['originLevel','currentXp','targetLevel','marketFoodPrice','bagPrice','originCost','additionalCosts','estimatedSalePrice']);
+  if(numeric.has(field))sim[field]=['originLevel','currentXp','targetLevel'].includes(field)?Math.trunc(Number(rawValue||0)):parseKamas(rawValue);else sim[field]=rawValue;
+  if(field==='originLevel'&&sim.originLevel>=sim.targetLevel)sim.targetLevel=Math.min(100,sim.originLevel+1);
+  if(field==='creatureType'){sim.creatureId='';sim.creatureCanonicalName='';sim.creatureImageUrl='./assets/placeholders/creature-fallback.svg';ed.creatureQuery='';ed.comboOpen=true;}
+  ed.errors={};if(shouldRender)emit();
+}
+
+function saveConsent(patch) {
+  setConsent({...patch,version:CONSENT_POLICY_VERSION,essential:true,decidedAt:nowIso()});
+  closeModal();showToast(t(state,'consent.saved'));
+}
+
+function openInformation(section='about') {
+  openModal({type:'information',section});
+  const hash=section==='how'?'como-funciona':section;
+  history.replaceState(null,'',`#${hash}`);
+}
+
+function handleAction(button) {
+  const action=button.dataset.action;if(!action)return;
+  if(action==='navigate'){state.simulationEditor=null;setView(button.dataset.view);return;}
+  if(action==='new-simulation'){openEditor(newSimulation(),'new');return;}
+  if(action==='edit-simulation'){closeModal();const sim=state.simulations.find(x=>x.id===button.dataset.id);if(sim)openEditor(sim,'edit');return;}
+  if(action==='duplicate-simulation'){closeModal();const sim=state.simulations.find(x=>x.id===button.dataset.id);if(sim)openEditor(sim,'duplicate');return;}
+  if(action==='exit-editor'){state.simulationEditor=null;setView('dashboard');return;}
+  if(action==='go-step'){const target=Number(button.dataset.step),ed=state.simulationEditor;if(target<=ed.maxReached){if(target>ed.step){const errors=validateStep(ed.simulation,ed.step,calculateSimulation(ed.simulation));if(Object.keys(errors).length){ed.errors=errors;showToast(t(state,'toast.invalidStep'),'error');return;}}ed.step=target;ed.errors={};emit();}return;}
+  if(action==='prev-step'){state.simulationEditor.step=Math.max(1,state.simulationEditor.step-1);state.simulationEditor.errors={};emit();return;}
+  if(action==='next-step'){const ed=state.simulationEditor,calc=calculateSimulation(ed.simulation),errors=validateStep(ed.simulation,ed.step,calc);if(Object.keys(errors).length){ed.errors=errors;showToast(t(state,'toast.invalidStep'),'error');return;}ed.step=Math.min(5,ed.step+1);ed.maxReached=Math.max(ed.maxReached,ed.step);ed.errors={};emit();return;}
+  if(action==='save-simulation'){
+    const ed=state.simulationEditor,calc=calculateSimulation(ed.simulation);let errors={},firstInvalid=5;
+    for(let step=1;step<=4;step++){const current=validateStep(ed.simulation,step,calc);if(Object.keys(current).length&&firstInvalid===5)firstInvalid=step;errors={...errors,...current};}
+    if(Object.keys(errors).length){ed.errors=errors;ed.step=firstInvalid;showToast(t(state,'toast.invalidStep'),'error');return;}
+    const creature=getCreatureById(ed.simulation.creatureId);const saved={...ed.simulation,name:generateSimulationName(ed.simulation),creatureCanonicalName:creature.canonicalName,creatureImageUrl:creature.imageUrl,unassociatedCreature:false,updatedAt:nowIso()};const exists=state.simulations.some(x=>x.id===saved.id);
+    setSimulations(exists?state.simulations.map(x=>x.id===saved.id?saved:x):[saved,...state.simulations]);state.simulationEditor=null;state.view='dashboard';showToast(exists?t(state,'toast.simulationUpdated'):t(state,'toast.simulationSaved'));return;
+  }
+  if(action==='select-creature'){const ed=state.simulationEditor,c=getCreatureById(button.dataset.id);if(c){ed.simulation.creatureId=c.id;ed.simulation.creatureCanonicalName=c.canonicalName;ed.simulation.creatureImageUrl=c.imageUrl;ed.creatureQuery=getCreatureName(c,state.language);ed.comboOpen=false;ed.errors={};emit();}return;}
+  if(action==='select-method'){state.simulationEditor.simulation.upMethod=button.dataset.method;state.simulationEditor.resourcesOpen=['resources','combined'].includes(button.dataset.method)||state.simulationEditor.resourcesOpen;state.simulationEditor.errors={};emit();return;}
+  if(action==='toggle-resources'){state.simulationEditor.resourcesOpen=!state.simulationEditor.resourcesOpen;emit();return;}
+  if(action==='toggle-custom-resource'){state.simulationEditor.customResourceOpen=!state.simulationEditor.customResourceOpen;emit();return;}
+  if(action==='add-custom-resource'){const root=button.closest('.collapsible-content'),name=root.querySelector('[data-resource-new="customName"]')?.value.trim(),xp=Number(root.querySelector('[data-resource-new="customXp"]')?.value),qty=Math.trunc(Number(root.querySelector('[data-resource-new="customQuantity"]')?.value)),price=parseKamas(root.querySelector('[data-resource-new="customUnitPrice"]')?.value),error=root.querySelector('[data-resource-error]');if(!name||!Number.isFinite(xp)||xp<=0||qty<=0){error.textContent=t(state,'simulation.invalidCustomResource');return;}const duplicate=state.simulationEditor.simulation.resourceLines.some(x=>(x.customName||'').toLocaleLowerCase()===name.toLocaleLowerCase());if(duplicate){error.textContent=t(state,'simulation.duplicateResource');return;}state.simulationEditor.simulation.resourceLines.push({id:createId('resource'),resourceId:`custom-${createId('item')}`,customName:name,customXp:xp,quantity:qty,unitPrice:price});state.simulationEditor.customResourceOpen=false;emit();return;}
+  if(action==='add-resource'){const root=button.closest('.collapsible-content'),id=root.querySelector('[data-resource-new="resourceId"]').value,qty=Math.trunc(Number(root.querySelector('[data-resource-new="quantity"]').value)),price=parseKamas(root.querySelector('[data-resource-new="unitPrice"]').value),error=root.querySelector('[data-resource-error]');if(!feedingResources.some(x=>x.id===id)){error.textContent=t(state,'simulation.invalidResource');return;}if(state.simulationEditor.simulation.resourceLines.some(x=>x.resourceId===id)){error.textContent=t(state,'simulation.duplicateResource');return;}if(qty<=0){error.textContent=t(state,'common.required');return;}state.simulationEditor.simulation.resourceLines.push({id:createId('resource'),resourceId:id,quantity:qty,unitPrice:price});emit();return;}
+  if(action==='delete-resource'){state.simulationEditor.simulation.resourceLines=state.simulationEditor.simulation.resourceLines.filter(x=>x.id!==button.dataset.id);emit();return;}
+  if(action==='simulation-details'){openModal({type:'simulation-details',id:button.dataset.id});return;}
+  if(action==='delete-simulation'){const sim=state.simulations.find(x=>x.id===button.dataset.id);if(sim)openModal({type:'confirm',title:t(state,'simulations.deleteTitle'),text:t(state,'simulations.deleteText'),confirmAction:'delete-simulation',id:sim.id});return;}
+  if(action==='register-sale'){const sim=state.simulations.find(x=>x.id===button.dataset.id);if(sim){const calc=calculateSimulation(sim);openModal({type:'register-sale',simulationId:sim.id,draft:{originCost:calc.originCost,upCost:calc.upCost+calc.additionalCosts,salePrice:calc.salePrice,saleChannel:sim.estimatedSaleChannel,soldAt:toIsoLocalDateTime()}});}return;}
+  if(action==='confirm-sale'){confirmSale();return;}
+  if(action==='sale-details'){openModal({type:'sale-details',id:button.dataset.id});return;}
+  if(action==='delete-sale'){const sale=state.sales.find(x=>x.id===button.dataset.id);if(sale)openModal({type:'confirm',title:t(state,'sales.deleteTitle'),text:t(state,'sales.deleteText'),confirmAction:'delete-sale',id:sale.id});return;}
+  if(action==='retry-sale'){const sale=state.sales.find(x=>x.id===button.dataset.id);if(sale&&sale.syncStatus==='failed'){const updated={...sale,syncStatus:'pending'};setSales(state.sales.map(x=>x.id===sale.id?updated:x));showToast(t(state,'sales.retryStarted'));startSync(updated);}return;}
+  if(action==='duplicate-sale-simulation'){const sale=state.sales.find(x=>x.id===button.dataset.id);if(sale)openEditor(newSimulation({creatureId:sale.creatureId,creatureType:sale.creatureType,creatureCanonicalName:sale.creatureCanonicalName,creatureImageUrl:sale.creatureImageUrl,originLevel:sale.originLevel,targetLevel:sale.targetLevel,upMethod:sale.upMethod,resourceLines:sale.resourceDetails,originCost:sale.originCost,estimatedSalePrice:sale.salePrice,estimatedSaleChannel:sale.saleChannel}),'duplicate');return;}
+  if(action==='open-support'){openModal({type:'support'});return;}
+  if(action==='open-information'){openInformation(button.dataset.section||'about');return;}
+  if(action==='information-section'){state.modal={...state.modal,section:button.dataset.section};const hash=button.dataset.section==='how'?'como-funciona':button.dataset.section;history.replaceState(null,'',`#${hash}`);emit();return;}
+  if(action==='open-consent'){openModal({type:'consent',draft:{...state.consent}});return;}
+  if(action==='consent-accept'){saveConsent({preferences:true,analytics:true,advertising:true});return;}
+  if(action==='consent-reject'){saveConsent({preferences:false,analytics:false,advertising:false});return;}
+  if(action==='consent-save'){saveConsent(state.modal?.draft||state.consent);return;}
+  if(action==='close-modal'){closeModal();return;}
+  if(action==='confirm-modal'){const m=state.modal;if(m.confirmAction==='delete-simulation'){setSimulations(state.simulations.filter(x=>x.id!==m.id));showToast(t(state,'toast.simulationDeleted'));}if(m.confirmAction==='delete-sale'){const removed=state.sales.find(x=>x.id===m.id);cancelSaleSync(m.id);const remaining=state.sales.filter(x=>x.id!==m.id);setSales(remaining);if(removed&&!remaining.some(x=>x.simulationId===removed.simulationId))setSimulations(state.simulations.map(sim=>sim.id===removed.simulationId?{...sim,status:'ready',updatedAt:nowIso()}:sim));showToast(t(state,'toast.saleDeleted'));}closeModal();return;}
+  if(action==='copy-pix'){copyPix();return;}
+  if(action==='toggle-language'){const menu=app.querySelector('[data-language-menu]');menu.hidden=!menu.hidden;button.setAttribute('aria-expanded',String(!menu.hidden));return;}
+  if(action==='set-language'){const language=button.dataset.language;if(state.simulationEditor?.simulation?.creatureId){const creature=getCreatureById(state.simulationEditor.simulation.creatureId);state.simulationEditor.creatureQuery=getCreatureName(creature,language);}setLanguage(language);return;}
+  if(action==='toggle-mobile'){const nav=app.querySelector('[data-mobile-nav]');nav.hidden=!nav.hidden;button.setAttribute('aria-expanded',String(!nav.hidden));return;}
+}
+
+function confirmSale() {
+  const modal=state.modal,sim=state.simulations.find(x=>x.id===modal.simulationId);if(!sim)return;const draft=modal.draft;
+  if(!draft.soldAt||draft.salePrice<=0||draft.originCost<0||draft.upCost<0||!['Mercado HDV','Outro Jogador'].includes(draft.saleChannel)){showToast(t(state,'toast.invalidStep'),'error');return;}
+  const soldDate=new Date(draft.soldAt);if(Number.isNaN(soldDate.getTime())){showToast(t(state,'toast.invalidStep'),'error');return;}
+  const calc=calculateSaleProfit(draft);const sale=normalizeSale({id:createId('sale'),simulationId:sim.id,simulationName:sim.name,creatureId:sim.creatureId,creatureCanonicalName:sim.creatureCanonicalName,creatureType:sim.creatureType,creatureImageUrl:sim.creatureImageUrl,originLevel:sim.originLevel,targetLevel:sim.targetLevel,upMethod:sim.upMethod,resourceDetails:structuredClone(sim.resourceLines),originCost:draft.originCost,upCost:draft.upCost,salePrice:draft.salePrice,saleChannel:draft.saleChannel,fee:calc.fee,profit:calc.profit,soldAt:soldDate.toISOString(),syncStatus:'pending',apiRegistered:false,apiRow:null,syncStarted:false,createdAt:nowIso()});
+  setSales([sale,...state.sales]);setSimulations(state.simulations.map(x=>x.id===sim.id?{...x,status:'sold',lastSaleAt:sale.createdAt,updatedAt:nowIso()}:x));closeModal();showToast(t(state,'sales.registered'));startSync(sale);
+}
+
+function startSync(sale) {
+  const started={...sale,syncStarted:true};setSales(state.sales.map(item=>item.id===sale.id?started:item));
+  syncSale(started,patch=>setSales(state.sales.map(item=>item.id===sale.id?{...item,...patch}:item)),patch=>setSales(state.sales.map(item=>item.id===sale.id?{...item,...patch}:item)));
+}
+
+async function copyPix() {
+  let copied=false;try{await navigator.clipboard.writeText(PIX_KEY);copied=true;}catch{const input=document.createElement('textarea');input.value=PIX_KEY;input.style.position='fixed';input.style.opacity='0';document.body.append(input);input.select();copied=document.execCommand('copy');input.remove();}
+  if(copied)showToast(t(state,'common.copied'));
+}
+
+app.addEventListener('pointerdown',event=>{if(event.target.closest('[data-action]'))window.clearTimeout(liveRenderTimer);},true);
+app.addEventListener('focusin',event=>{if(event.target.matches('[data-field="creatureQuery"]')&&state.simulationEditor&&!state.simulationEditor.comboOpen){state.simulationEditor.comboOpen=true;emit();requestAnimationFrame(()=>app.querySelector('[data-field="creatureQuery"]')?.focus());}});
+app.addEventListener('click',event=>{if(event.target.classList.contains('modal-backdrop')){closeModal();return;}const actionNode=event.target.closest('[data-action]');if(actionNode)handleAction(actionNode);if(!event.target.closest('.language')){const menu=app.querySelector('[data-language-menu]');if(menu)menu.hidden=true;}});
+app.addEventListener('change',event=>{
+  const field=event.target.dataset.field;if(field)updateEditorField(field,event.target.value,event.target.tagName==='SELECT'||event.target.type==='radio');
+  const resourceField=event.target.dataset.resourceField;if(resourceField&&state.simulationEditor){const line=state.simulationEditor.simulation.resourceLines.find(x=>x.id===event.target.dataset.id);if(line){if(resourceField==='resourceId'){if(state.simulationEditor.simulation.resourceLines.some(x=>x.id!==line.id&&x.resourceId===event.target.value)){showToast(t(state,'simulation.duplicateResource'),'error');emit();}else{line.resourceId=event.target.value;emit();}}else if(resourceField==='quantity'){line.quantity=Math.max(1,Math.trunc(Number(event.target.value)||1));emit();}else if(resourceField==='unitPrice'){line.unitPrice=parseKamas(event.target.value);emit();}else if(resourceField==='customXp'){line.customXp=Math.max(0.0001,Number(event.target.value)||0.0001);emit();}else if(resourceField==='customName'){line.customName=event.target.value.trim();emit();}}}
+  const saleField=event.target.dataset.saleField;if(saleField&&state.modal?.type==='register-sale'){state.modal.draft[saleField]=['originCost','upCost','salePrice'].includes(saleField)?parseKamas(event.target.value):event.target.value;if(event.target.tagName==='SELECT')emit();}
+  const salesFilter=event.target.dataset.salesFilter;if(salesFilter){state.salesFilter={...(state.salesFilter||{}),[salesFilter]:event.target.value};emit();}
+  const dashboardFilter=event.target.dataset.dashboardFilter;if(dashboardFilter)setDashboardFilters({[dashboardFilter]:event.target.value});
+  const consentField=event.target.dataset.consentField;if(consentField&&state.modal?.type==='consent'){state.modal.draft={...state.modal.draft,[consentField]:event.target.checked};}
+});
+app.addEventListener('input',event=>{
+  if(event.target.matches('[data-resource-search]')&&state.simulationEditor){state.simulationEditor.resourceQuery=event.target.value;emit();requestAnimationFrame(()=>{const input=app.querySelector('[data-resource-search]');input?.focus();input?.setSelectionRange(input.value.length,input.value.length);});return;}
+  const field=event.target.dataset.field;if(field==='creatureQuery'&&state.simulationEditor){state.simulationEditor.creatureQuery=event.target.value;state.simulationEditor.comboOpen=true;emit();requestAnimationFrame(()=>{const input=app.querySelector('[data-field="creatureQuery"]');input?.focus();input?.setSelectionRange(input.value.length,input.value.length);});return;}if(field&&state.simulationEditor){updateEditorField(field,event.target.value,false);scheduleLiveRender(`[data-field="${field}"]`,event.target.selectionStart);}
+  const resourceField=event.target.dataset.resourceField;if(resourceField&&state.simulationEditor){const line=state.simulationEditor.simulation.resourceLines.find(x=>x.id===event.target.dataset.id);if(line){if(resourceField==='quantity')line.quantity=Math.max(1,Math.trunc(Number(event.target.value)||1));else if(resourceField==='unitPrice')line.unitPrice=parseKamas(event.target.value);else if(resourceField==='customXp')line.customXp=Math.max(0.0001,Number(event.target.value)||0.0001);else if(resourceField==='customName')line.customName=event.target.value;scheduleLiveRender(`[data-resource-field="${resourceField}"][data-id="${line.id}"]`,event.target.selectionStart);}}
+  const saleField=event.target.dataset.saleField;if(saleField&&state.modal?.type==='register-sale'){state.modal.draft[saleField]=['originCost','upCost','salePrice'].includes(saleField)?parseKamas(event.target.value):event.target.value;scheduleLiveRender(`[data-sale-field="${saleField}"]`,event.target.selectionStart);}
+  const filter=event.target.dataset.salesFilter;if(filter==='search'){state.salesFilter={...(state.salesFilter||{}),search:event.target.value};emit();requestAnimationFrame(()=>{const input=app.querySelector('[data-sales-filter="search"]');input?.focus();input?.setSelectionRange(input.value.length,input.value.length);});}
+});
+app.addEventListener('keydown',event=>{
+  if(event.key==='Escape'&&state.modal){closeModal();return;}
+  if(state.modal&&event.key==='Tab'){const modal=app.querySelector('.modal');const focusable=[...modal.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),a[href]')];if(focusable.length){const first=focusable[0],last=focusable[focusable.length-1];if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}}
+  if(event.target.matches('[data-field="creatureQuery"]')&&event.key==='ArrowDown'){event.preventDefault();app.querySelector('.combobox-option')?.focus();}
+  if(event.target.matches('.combobox-option')){const options=[...app.querySelectorAll('.combobox-option')],index=options.indexOf(event.target);if(event.key==='ArrowDown'){event.preventDefault();options[(index+1)%options.length]?.focus();}if(event.key==='ArrowUp'){event.preventDefault();options[(index-1+options.length)%options.length]?.focus();}if(event.key==='Escape'){state.simulationEditor.comboOpen=false;emit();requestAnimationFrame(()=>app.querySelector('[data-field="creatureQuery"]')?.focus());}}
+});
+
+const initialHash=location.hash.replace('#','');
+if(initialHash==='como-funciona')requestAnimationFrame(()=>openInformation('how'));

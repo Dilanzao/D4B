@@ -1,0 +1,3 @@
+# Adicione aqui a linha fornecida pelo Google AdSense depois que o site receber um ID de editor.
+# Exemplo de formato (não publicar o exemplo como registro real):
+# google.com, pub-0000000000000000, DIRECT, f08c47fec0942fa0

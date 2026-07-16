@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Dofus4Business</title><desc id="desc">Emblema D4B dourado com traços felinos</desc>
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f2d38d"/><stop offset=".5" stop-color="#c89b45"/><stop offset="1" stop-color="#8a5d21"/></linearGradient>
+    <linearGradient id="dark" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#443722"/><stop offset="1" stop-color="#17130f"/></linearGradient>
+  </defs>
+  <path fill="url(#dark)" d="M256 26c98 0 185 53 218 133l-34 261c-2 18-17 32-35 32H107c-18 0-33-14-35-32L38 159C71 79 158 26 256 26Z"/>
+  <path fill="none" stroke="url(#gold)" stroke-width="18" d="M256 43c91 0 167 46 199 118l-32 250c-1 10-9 18-20 18H109c-11 0-19-8-20-18L57 161C89 89 165 43 256 43Z"/>
+  <path fill="url(#gold)" d="M113 145c35-64 83-91 143-91s108 27 143 91l-52-22-33 36-58-18-58 18-33-36-52 22Z" opacity=".92"/>
+  <path fill="#f5e3b6" d="m156 177 31-23 28 27-33 7Zm200 0-31-23-28 27 33 7Z"/>
+  <path fill="url(#gold)" d="M145 208h96c66 0 105 35 105 94 0 64-43 103-112 103h-89V208Zm56 48v101h35c34 0 52-18 52-53 0-33-18-48-54-48h-33Z"/>
+  <path fill="#f7edd2" d="M306 210h42v68h28v39h-28v38h-45v-38h-76v-34l79-73Zm-33 68h30v-33l-30 33Z"/>
+  <path fill="url(#gold)" d="M116 213h47v192h-47zM348 355h36c14 0 22 7 22 19 0 15-10 23-28 23h-30v-42Zm0-75h33c13 0 20 7 20 18 0 12-8 19-24 19h-29v-37Zm-49-44h83c45 0 69 20 69 56 0 24-11 41-33 50 27 8 40 27 40 56 0 42-29 66-80 66h-79V236Z" transform="scale(.72) translate(190 155)"/>
+  <circle cx="214" cy="187" r="7" fill="#17130f"/><circle cx="298" cy="187" r="7" fill="#17130f"/>
+</svg>

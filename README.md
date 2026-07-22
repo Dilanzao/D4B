@@ -1,8 +1,17 @@
-# Dofus4Business v2.2.0
+# Dofus4Business v2.3.1
 
 Aplicação web estática para simular a compra, evolução e venda de mascotes e montascotes no DOFUS, controlar vendas reais e analisar resultados econômicos.
 
-A versão 2.2.0 preserva a calculadora, simulações, painel gerencial, histórico de vendas, integração de vendas, idiomas, consentimento, apoio por PIX e preparação para publicidade. Também adiciona o novo logotipo oficial, corrige a tradução dinâmica das criaturas e permite combinar alimentação por recursos com Ração Vitaminada ou Bolsa de Kolifichas.
+A versão 2.3.1 preserva as funções anteriores e corrige o fluxo de seleção e uso de recursos:
+
+- uma única listbox para pesquisar, escolher ou cadastrar um recurso personalizado;
+- catálogo completo exibido quando o campo de pesquisa está vazio;
+- listagem completa de mascotes e montascotes antes da pesquisa;
+- recurso escolhido exibido com nome e imagem;
+- memorização da XP por recurso no navegador;
+- método unificado **Utilizar Recursos**, com complemento automático por ração ou bolsa somente quando necessário;
+- recursos podem cobrir 100% da XP sem custo de complemento;
+- preservação do foco e do cursor nos campos durante os recálculos automáticos.
 
 ## Tecnologia
 
@@ -11,8 +20,8 @@ A versão 2.2.0 preserva a calculadora, simulações, painel gerencial, históri
 - HTML semântico;
 - CSS responsivo sem framework visual;
 - Chart.js pelo pacote público oficial do npm;
-- `localStorage` para dados locais;
-- hospedagem estática, sem servidor próprio obrigatório.
+- `localStorage` para persistência;
+- hospedagem estática, sem backend próprio obrigatório.
 
 ## Requisitos
 
@@ -20,22 +29,22 @@ A versão 2.2.0 preserva a calculadora, simulações, painel gerencial, históri
 - npm 10 ou superior recomendado;
 - navegador moderno com JavaScript habilitado.
 
-O projeto possui `.npmrc` com o registro público:
+O `.npmrc` força o registro público:
 
 ```text
 registry=https://registry.npmjs.org/
 ```
 
-## Instalação e execução local
+## Instalação e execução
 
-No terminal, dentro da pasta do projeto:
+Dentro da pasta do projeto:
 
 ```bash
 npm install
 npm run dev
 ```
 
-O Vite informará o endereço local, normalmente:
+O endereço local normalmente será:
 
 ```text
 http://localhost:5173/
@@ -48,13 +57,13 @@ npm run build
 npm run preview
 ```
 
-O build é gerado em:
+O build publicável é gerado em:
 
 ```text
 dist/
 ```
 
-O preview normalmente abre em:
+O preview normalmente usa:
 
 ```text
 http://localhost:4173/
@@ -66,27 +75,145 @@ http://localhost:4173/
 npm run check
 ```
 
-Esse comando:
+O comando:
 
-1. gera o catálogo a partir do TSV;
-2. valida IDs, tipos, traduções e imagens do catálogo;
-3. executa testes de cálculo;
-4. executa um teste de DOM no build;
-5. valida dependências, registries, arquivos e referências proibidas.
+1. regenera o catálogo de criaturas;
+2. valida IDs, tipos, traduções e imagens;
+3. testa cálculos, bônus, recursos e vendas;
+4. testa a integração do catálogo de recursos com uma resposta simulada da API;
+5. compila o site e executa teste de DOM;
+6. procura referências internas, registries privados e arquivos ausentes.
 
-## Funcionalidades
+## Bônus de XP
 
-### Simulações
+Cada simulação possui o campo **Bônus de XP** na etapa de níveis. Exemplos:
+
+```text
+0%   = sem bônus
+50%  = cada fonte fornece 1,5 vez a XP normal
+100% = cada fonte fornece o dobro da XP normal
+```
+
+Fórmula:
+
+```text
+XP efetiva por unidade = XP base × (1 + bônus ÷ 100)
+Quantidade necessária = arredondar para cima(XP necessária ÷ XP efetiva por unidade)
+```
+
+O bônus é aplicado a:
+
+- Ração Vitaminada;
+- rações obtidas por Bolsa de Kolifichas;
+- recursos catalogados;
+- recursos personalizados;
+- recursos usados em combinação com ração ou bolsa.
+
+O cálculo é conservador: a quantidade sempre é arredondada para cima.
+
+O bônus é salvo na simulação e também acompanha uma venda originada dela. Simulações antigas recebem `0%` por migração defensiva.
+
+## Métodos de evolução
+
+A calculadora oferece três estratégias:
+
+1. **Ração Vitaminada:** todo o XP é completado com rações compradas no mercado.
+2. **Bolsa de Kolifichas:** calcula rações, Kolifichas, bolsas inteiras e sobras.
+3. **Utilizar Recursos:** soma a XP dos recursos adicionados e completa automaticamente apenas o restante com Ração Vitaminada ou Bolsa de Kolifichas. Se os recursos alcançarem 100% da XP, nenhum complemento é utilizado.
+
+Somente o método explicitamente selecionado entra no custo do UP.
+
+## Quantidade necessária por recurso
+
+Cada linha do editor mostra:
+
+- XP base;
+- XP efetiva após o bônus;
+- quantidade que o usuário planeja usar;
+- quantidade necessária caso aquele recurso fosse usado sozinho;
+- XP total da linha;
+- preço unitário;
+- custo total.
+
+O botão **Usar quantidade** preenche automaticamente a quantidade necessária para alcançar o nível apenas com aquele recurso.
+
+Recursos personalizados também possuem esse cálculo, desde que uma XP unitária maior que zero seja informada.
+
+## Catálogo completo de recursos — DofusDude
+
+Ao abrir o site, o navegador solicita o catálogo em:
+
+```text
+https://api.dofusdu.de/dofus3/v1/{idioma}/items/resources/all
+```
+
+Idiomas usados:
+
+```text
+pt-BR → pt
+fr-FR → fr
+en-US → en
+es-ES → es
+```
+
+O catálogo fornece:
+
+- ID Ankama;
+- nome localizado;
+- nível do recurso;
+- imagem, quando disponível.
+
+O retorno fica em cache por sete dias para evitar downloads repetidos. O ID interno permanece ligado ao ID Ankama, permitindo trocar o idioma sem perder o recurso selecionado.
+
+### Limitação importante da API
+
+A API de recursos fornece o catálogo dos itens, mas não informa a XP específica que cada item concede ao alimentar um mascote. Por isso:
+
+- recursos já presentes no guia incorporado recebem XP automaticamente;
+- recursos sem XP confirmada continuam selecionáveis;
+- nesses casos, a interface pede que o usuário informe a XP observada no jogo ou confirmada em uma fonte confiável;
+- uma linha sem XP não entra no custo nem na XP até que o valor seja informado.
+
+Se a API estiver indisponível, o site utiliza automaticamente o catálogo reduzido incorporado em:
+
+```text
+src/data/feedingResources.js
+```
+
+Serviço de integração:
+
+```text
+src/services/resourceCatalogService.js
+```
+
+## Catálogo de criaturas
+
+A fonte principal é:
+
+```text
+src/data/catalog-source.tsv
+```
+
+Ela contém tipo, nomes em português, francês, inglês e espanhol, além da URL de imagem. Para regenerar:
+
+```bash
+npm run generate:catalog
+npm run validate:catalog
+```
+
+A troca de idioma altera o nome exibido sem mudar o ID interno da criatura.
+
+## Simulações
 
 O fluxo possui cinco etapas:
 
 1. escolha da criatura;
-2. níveis de origem e destino;
-3. método de evolução;
+2. níveis, XP atual e bônus;
+3. método de evolução e recursos;
 4. custos e venda estimada;
 5. revisão e salvamento.
 
-Cada nova simulação começa com nível de destino 100. Simulações antigas, editadas ou duplicadas mantêm seus próprios níveis.
+Novas simulações começam com nível de destino 100. Simulações antigas, editadas e duplicadas mantêm seus valores.
 
 Os cards exibem diretamente:
 
@@ -96,106 +223,34 @@ Os cards exibem diretamente:
 - ver detalhes;
 - excluir.
 
-O nome definido pelo usuário é o título principal. O nome oficial da criatura, traduzido conforme o idioma ativo, aparece como informação secundária.
+Quando houver bônus, ele aparece no card e nos detalhes.
 
-### Métodos de evolução
+## Vendas
 
-A calculadora oferece:
+Uma venda é criada a partir de uma simulação salva. O modal permite confirmar:
 
-- Ração Vitaminada comprada no mercado;
-- Bolsa de Kolifichas;
-- alimentação somente por recursos;
-- combinação de recursos com complemento por Ração Vitaminada ou Bolsa de Kolifichas.
+- custo real da criatura;
+- custo real do UP;
+- preço vendido;
+- canal;
+- data e hora.
 
-No método combinado, a aplicação:
-
-1. soma a XP dos recursos selecionados;
-2. calcula a XP ainda faltante;
-3. completa apenas a parte restante com a fonte escolhida;
-4. soma o custo dos recursos e o custo do complemento;
-5. não cobra simultaneamente métodos que não foram selecionados.
-
-### Recursos
-
-O projeto contém um catálogo inicial incorporado com referências de XP disponíveis no guia de evolução informado pelo proprietário. Como qualquer recurso compatível pode ser usado no jogo, o editor também permite adicionar uma entrada personalizada informando:
-
-- nome do recurso;
-- XP unitária confirmada pelo usuário;
-- quantidade;
-- preço unitário.
-
-As linhas podem ser alteradas e excluídas. Recursos do catálogo permitem trocar o item por outro item catalogado; recursos personalizados permitem editar nome e XP.
-
-Os dados personalizados permanecem na simulação e são considerados imediatamente nos cálculos, inclusive quando o painel é recolhido.
-
-### Catálogo de criaturas
-
-A fonte principal é:
-
-```text
-src/data/catalog-source.tsv
-```
-
-O arquivo contém:
-
-- tipo;
-- nome em português;
-- nome em francês;
-- nome em inglês;
-- nome em espanhol;
-- URL de imagem.
-
-Para regenerar e validar:
-
-```bash
-npm run generate:catalog
-npm run validate:catalog
-```
-
-A troca de idioma altera o nome exibido sem alterar o ID interno da criatura. A busca considera o idioma ativo, o nome canônico e todas as traduções.
-
-### Imagens e logotipo
-
-O logotipo enviado pelo proprietário foi processado somente para remover a área branca externa. O desenho não foi recriado.
-
-Arquivos principais:
-
-```text
-public/assets/brand/logo.png
-public/assets/brand/logo.webp
-public/assets/brand/logo-header.webp
-public/assets/brand/icon-192.png
-public/assets/brand/icon-512.png
-public/favicon.ico
-public/apple-touch-icon.png
-```
-
-As imagens das criaturas utilizam as URLs associadas ao catálogo. Falhas de carregamento usam o placeholder do projeto.
-
-### Vendas
-
-Uma venda é criada a partir de uma simulação salva. O modal permite confirmar os custos reais, preço, canal e data/hora.
-
-A integração existente é preservada em:
+A integração existente está em:
 
 ```text
 src/config/salesApi.js
 src/services/salesService.js
 ```
 
-O envio é assíncrono e não bloqueia a navegação. A chave técnica não é mostrada na interface, em mensagens ou no console.
+O envio é assíncrono e não bloqueia a navegação. URL, chave e payload não são exibidos ao jogador nem registrados no console.
 
-Excluir uma venda remove somente o registro local deste navegador. Os detalhes dessa limitação aparecem na área **Sobre e transparência → Privacidade e dados**, sem repetir avisos técnicos nos cards.
+A exclusão remove apenas o histórico local deste navegador. Não existe API de exclusão remota.
 
-### Painel gerencial
+## Painel gerencial
 
-O painel usa somente vendas registradas pelo usuário. Sem vendas, exibe um estado vazio.
+O painel usa exclusivamente vendas registradas. Inclui filtros, KPIs e gráficos de:
 
-Inclui:
-
-- filtros globais;
-- KPIs de receita, custo, lucro, margem e ticket;
-- evolução financeira;
+- receita, custo e lucro;
 - quantidade de vendas;
 - Mascote x Montascote;
 - canais de venda;
@@ -205,7 +260,7 @@ Inclui:
 - distribuição de resultados;
 - melhores períodos.
 
-### Idiomas
+## Idiomas
 
 Idiomas disponíveis:
 
@@ -214,39 +269,36 @@ Idiomas disponíveis:
 - inglês;
 - espanhol.
 
-Textos ficam em:
+Traduções ficam em:
 
 ```text
 src/i18n/translations.js
 ```
 
-O idioma somente é persistido quando a categoria **Preferências** estiver autorizada. Mesmo sem essa autorização, a troca funciona durante a sessão atual e não apaga simulações ou vendas.
+A lista de criaturas e o catálogo remoto de recursos acompanham o idioma ativo.
 
 ## Consentimento e privacidade
 
-Na primeira visita, o site mostra o gerenciador de preferências. A política atual usa a versão `1.1`.
+Na primeira visita, o site apresenta preferências por categoria:
 
-Categorias:
+- Essenciais;
+- Preferências;
+- Análise;
+- Publicidade.
 
-- **Essenciais:** necessárias para simulações, vendas e funcionamento;
-- **Preferências:** idioma e configurações persistentes;
-- **Análise:** reservada para uma futura ferramenta de métricas;
-- **Publicidade:** reservada para anúncios e medição publicitária.
+Análise e publicidade começam desativadas. Nenhum provedor de análise ou publicidade é carregado nesta versão.
 
-Efeitos reais:
+A decisão pode ser alterada pelo rodapé. O estado é salvo em:
 
-- rejeitar preferências remove idioma/configurações persistentes, sem apagar simulações e vendas;
-- análise não inicializa sem autorização;
-- publicidade não inicializa sem autorização;
-- a decisão é salva em `d4b_consent_v2`;
-- os atributos `data-consent-*` no elemento `<html>` refletem imediatamente a escolha;
-- a decisão pode ser alterada pelo rodapé.
+```text
+d4b_consent_v2
+```
 
-Nenhum provedor de análise ou publicidade é carregado nesta versão.
+Quando o Google AdSense for ativado para usuários de regiões que exigem uma plataforma de consentimento certificada, a implementação deverá ser conectada a uma CMP certificada ou ao recurso apropriado do Google Privacy & Messaging.
 
 ## Locais preparados para Google AdSense
 
-Os espaços estão sempre reservados para evitar mudanças bruscas de layout:
+Os quatro espaços permanecem reservados no desenvolvimento e no build:
 
 ```text
 ad-slot-header
@@ -261,27 +313,23 @@ Configuração central:
 export const ADS_ENABLED = false;
 ```
 
-Enquanto estiver `false`, o site exibe o placeholder “Publicidade” e uma mensagem de manutenção.
+Enquanto estiver `false`, é mostrado apenas o placeholder de publicidade. Para integrar AdSense:
 
-Para ativar anúncios futuramente:
-
-1. mantenha os mesmos IDs;
-2. conecte o código real no ponto indicado em `src/services/consentService.js` e no contêiner criado por `src/components/common.js`;
-3. altere `ADS_ENABLED` somente depois da configuração;
-4. não carregue scripts publicitários antes da autorização da categoria Publicidade;
-5. configure a solução de consentimento apropriada para as regiões atendidas antes de publicar anúncios personalizados.
-
-Os placeholders não imitam anúncios, não ficam junto a botões de ação e não incentivam cliques.
+1. mantenha os IDs;
+2. conecte o script no ponto preparado em `src/services/consentService.js`;
+3. utilize os contêineres criados por `src/components/common.js`;
+4. altere `ADS_ENABLED` apenas após configurar a conta;
+5. não carregue publicidade antes da autorização aplicável.
 
 ## Apoio por PIX
 
-A área de apoio usa a chave:
+Chave configurada:
 
 ```text
 Apoie@dofus4business.com.br
 ```
 
-O botão de cópia utiliza Clipboard API com fallback nativo.
+A cópia usa Clipboard API com fallback nativo.
 
 ## Persistência e migração
 
@@ -292,10 +340,36 @@ d4b_language_v2
 d4b_simulations_v2
 d4b_sales_v2
 d4b_preferences_v2
+- `d4b_resource_xp_memory_v1`: XP confirmada pelo usuário para cada recurso já utilizado.
 d4b_consent_v2
 ```
 
-A migração tenta recuperar dados das versões anteriores e associar criaturas por ID ou nomes normalizados. Registros não associados são preservados com imagem de fallback.
+A leitura é defensiva. Dados antigos são migrados sem apagar automaticamente simulações, vendas, idioma ou consentimento válido.
+
+## Estrutura resumida
+
+```text
+dofus4business/
+├── .github/workflows/deploy-pages.yml
+├── .npmrc
+├── CHANGELOG.md
+├── README.md
+├── TEST_REPORT.md
+├── index.html
+├── package.json
+├── package-lock.json
+├── public/
+├── scripts/
+└── src/
+    ├── components/
+    ├── config/
+    ├── data/
+    ├── i18n/
+    ├── services/
+    ├── state/
+    ├── styles/
+    └── utils/
+```
 
 ## Publicação no GitHub Pages
 
@@ -306,179 +380,72 @@ O projeto inclui:
 public/CNAME
 ```
 
-O domínio configurado é:
+Domínio configurado:
 
 ```text
 dofus4business.com.br
 ```
 
-Fluxo recomendado:
+Procedimento:
 
-1. crie um repositório no GitHub;
-2. envie todos os arquivos do projeto;
-3. em **Settings → Pages**, selecione a publicação por GitHub Actions;
+1. envie o projeto para o GitHub;
+2. abra **Settings → Pages**;
+3. escolha publicação por GitHub Actions;
 4. confirme o domínio personalizado;
-5. ajuste os registros DNS conforme as instruções exibidas pelo GitHub;
+5. mantenha os registros DNS do domínio apontados ao GitHub Pages;
 6. aguarde a emissão do HTTPS.
 
-O Vite usa caminhos relativos no build, permitindo publicar tanto em domínio próprio quanto em uma pasta de GitHub Pages.
+O Vite usa caminhos relativos, permitindo publicação em domínio próprio ou caminho de projeto.
 
-## Publicação manual em hospedagem estática
+## Publicação em outras hospedagens
 
-Depois de executar:
+Após:
 
 ```bash
 npm run build
 ```
 
-publique todo o conteúdo da pasta `dist/` em:
+publique todo o conteúdo de `dist/` em Netlify, Vercel, Cloudflare Pages, Hostinger, Firebase Hosting, Apache, Nginx ou outro servidor estático.
 
-- Netlify;
-- Vercel;
-- Cloudflare Pages;
-- Hostinger;
-- Firebase Hosting;
-- Apache;
-- Nginx;
-- outro servidor de arquivos estáticos.
+## Atualização da versão
 
-## Atualização de dados
+A versão central fica em:
 
-### Criaturas
+```text
+src/config/app.js
+```
 
-Edite `src/data/catalog-source.tsv`, depois execute:
+Use versionamento semântico:
+
+- PATCH: correções de bugs;
+- MINOR: funcionalidades compatíveis;
+- MAJOR: alterações incompatíveis.
+
+Também atualize `package.json`, gere novamente o `package-lock.json` e registre a alteração no `CHANGELOG.md`.
+
+## Solução de problemas
+
+### npm tentando usar registro incorreto
 
 ```bash
-npm run generate:catalog
-npm run validate:catalog
-```
-
-### Recursos
-
-Edite:
-
-```text
-src/data/feedingResources.js
-```
-
-Somente adicione valores de XP confirmados. Não invente traduções ou XP ausentes. A entrada personalizada no aplicativo cobre itens ainda não incorporados ao catálogo.
-
-### Traduções
-
-Edite:
-
-```text
-src/i18n/translations.js
-```
-
-Toda nova chave de interface deve existir nos quatro idiomas.
-
-### Versão
-
-A fonte central é:
-
-```javascript
-export const APP_VERSION = "2.2.0";
-```
-
-Também atualize `package.json` e `CHANGELOG.md` no mesmo commit.
-
-Versionamento semântico:
-
-- **PATCH:** correções compatíveis;
-- **MINOR:** novas funcionalidades compatíveis;
-- **MAJOR:** alterações incompatíveis.
-
-## Estrutura resumida
-
-```text
-dofus4business/
-├── .github/workflows/deploy-pages.yml
-├── .gitignore
-├── .npmrc
-├── CHANGELOG.md
-├── README.md
-├── TEST_REPORT.md
-├── index.html
-├── package.json
-├── package-lock.json
-├── vite.config.js
-├── public/
-│   ├── CNAME
-│   ├── favicon.ico
-│   ├── favicon.svg
-│   ├── favicon-32.png
-│   ├── apple-touch-icon.png
-│   ├── manifest.webmanifest
-│   ├── robots.txt
-│   ├── sitemap.xml
-│   └── assets/
-├── scripts/
-│   ├── generate-catalog.js
-│   ├── validate-catalog.js
-│   ├── validate-project.js
-│   ├── smoke-test.js
-│   ├── dom-smoke-test.js
-│   └── postbuild.js
-├── src/
-│   ├── components/
-│   ├── config/
-│   ├── data/
-│   ├── i18n/
-│   ├── services/
-│   ├── state/
-│   ├── styles/
-│   └── utils/
-└── dist/
-```
-
-## Erros comuns
-
-### `ETIMEDOUT` apontando para registro interno
-
-Confirme:
-
-```bash
-npm config get registry
-```
-
-O resultado deve ser:
-
-```text
-https://registry.npmjs.org/
-```
-
-Depois execute:
-
-```bash
-rm -rf node_modules
+npm config set registry https://registry.npmjs.org/ --location=project
 npm install
 ```
 
-No PowerShell:
+### Catálogo completo de recursos não carregou
 
-```powershell
-Remove-Item -Recurse -Force node_modules -ErrorAction SilentlyContinue
-npm install
-```
+- verifique a conexão do navegador;
+- confirme se `https://api.dofusdu.de` está acessível;
+- use o botão de tentar novamente;
+- o catálogo incorporado continuará disponível como fallback.
 
-### A porta já está ocupada
+### Recurso aparece sem XP
 
-```bash
-npm run dev -- --port 5174
-```
+Isso significa que o item existe no catálogo do jogo, mas a XP de alimentação não está confirmada no catálogo local. Informe a XP unitária antes de calcular a quantidade e o custo.
 
-### Catálogo alterado, mas a interface não mudou
+### Build antigo no GitHub Pages
 
-```bash
-npm run generate:catalog
-npm run build
-```
-
-### Dados antigos inconsistentes
-
-Faça backup do armazenamento do navegador antes de limpar dados. A aplicação tenta migrar versões anteriores automaticamente.
-
-## Propriedade intelectual
-
-Dofus4Business é uma ferramenta independente criada pela comunidade e não possui vínculo, patrocínio, aprovação ou afiliação com a Ankama. DOFUS, seus nomes, personagens, imagens, marcas e demais conteúdos relacionados pertencem aos seus respectivos proprietários. As referências são utilizadas para fins informativos e de apoio à comunidade.
+- confirme a execução do workflow;
+- limpe o cache do navegador;
+- verifique se `dist/` foi gerada com a versão atual;
+- confirme que o `CNAME` está presente no artefato publicado.

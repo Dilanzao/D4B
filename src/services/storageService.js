@@ -50,10 +50,13 @@ export function normalizeSimulation(input = {}) {
     unassociatedCreature: !creature && Boolean(legacy.creatureId || legacy.petName || legacy.creatureCanonicalName),
     originLevel: Number.isFinite(Number(legacy.originLevel)) ? Math.min(99, Math.max(0, Math.trunc(Number(legacy.originLevel)))) : 0,
     currentXp: Number.isFinite(Number(legacy.currentXp ?? legacy.currentXpInLevel)) ? Math.max(0, Math.trunc(Number(legacy.currentXp ?? legacy.currentXpInLevel))) : 0,
+    xpBonusPercent: Number.isFinite(Number(legacy.xpBonusPercent)) ? Math.min(1000, Math.max(0, Number(legacy.xpBonusPercent))) : 0,
     targetLevel: Number.isFinite(rawTarget) ? Math.min(100, Math.max(1, Math.trunc(rawTarget))) : 80,
-    upMethod: legacy.upMethod === '' ? '' : (['vitaminizedFood','kolitokenBag','resources','combined'].includes(legacy.upMethod)
-      ? legacy.upMethod
-      : ((legacy.bagPrice || 0) / 10 < (legacy.marketRationPrice || Infinity) ? 'kolitokenBag' : 'vitaminizedFood')),
+    upMethod: legacy.upMethod === '' ? '' : (legacy.upMethod === 'resources'
+      ? 'combined'
+      : (['vitaminizedFood','kolitokenBag','combined'].includes(legacy.upMethod)
+        ? legacy.upMethod
+        : ((legacy.bagPrice || 0) / 10 < (legacy.marketRationPrice || Infinity) ? 'kolitokenBag' : 'vitaminizedFood'))),
     marketFoodPrice: Math.max(0, Math.round(Number(legacy.marketFoodPrice ?? legacy.marketRationPrice ?? 0) || 0)),
     bagPrice: Math.max(0, Math.round(Number(legacy.bagPrice ?? 0) || 0)),
     combinedRationSource: ['vitaminizedFood','kolitokenBag'].includes(legacy.combinedRationSource) ? legacy.combinedRationSource : 'vitaminizedFood',
@@ -97,7 +100,8 @@ export function normalizeSale(input = {}) {
     unassociatedCreature: !creature && Boolean(input.creatureId || input.creatureCanonicalName || input.petName),
     originLevel: Number(input.originLevel || 0),
     targetLevel: Number(input.targetLevel || 0),
-    upMethod: input.upMethod || 'vitaminizedFood',
+    xpBonusPercent: Number.isFinite(Number(input.xpBonusPercent)) ? Math.min(1000, Math.max(0, Number(input.xpBonusPercent))) : 0,
+    upMethod: input.upMethod === 'resources' ? 'combined' : (input.upMethod || 'vitaminizedFood'),
     resourceDetails: Array.isArray(input.resourceDetails) ? input.resourceDetails : [],
     originCost,
     upCost,

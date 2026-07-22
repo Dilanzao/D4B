@@ -17,6 +17,14 @@ export const dataSources = {
     license: 'Condição de uso não informada no catálogo; uso referencial, sem alegação de domínio público.',
     checkedAt: CATALOG_UPDATED_AT
   },
+  resourceCatalog: { id: 'resourceCatalog',
+    category: 'Catálogo de recursos',
+    datum: 'Relação completa de recursos do jogo',
+    source: 'DofusDude API — Dofus 3 Resources',
+    url: 'https://docs.dofusdu.de/dofus3/v1/',
+    license: 'API GPL-3.0; dados e imagens do jogo permanecem vinculados aos respectivos titulares.',
+    checkedAt: CATALOG_UPDATED_AT
+  },
   feedingXp: { id: 'feedingXp',
     category: 'XP e alimentação',
     datum: 'Curva de XP e recursos confirmados',

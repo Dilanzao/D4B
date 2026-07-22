@@ -1,5 +1,31 @@
 # Changelog
 
+## 2.3.1
+
+- Unificação da busca e seleção de recursos em uma única listbox com nome e imagem.
+- Exibição de todos os mascotes, montascotes e recursos quando não houver pesquisa.
+- Inclusão da opção de recurso personalizado dentro da própria listbox.
+- Memorização local da XP informada para recursos já utilizados.
+- Unificação de Alimentação por recursos e Combinar Recursos e Ração no método Utilizar Recursos.
+- Complemento automático por Ração Vitaminada ou Bolsa de Kolifichas apenas quando os recursos não cobrirem toda a XP.
+- Remoção do texto redundante sobre a origem do catálogo na calculadora.
+- Preservação de foco e posição do cursor durante recálculos em tempo real.
+- Migração defensiva de simulações e vendas que utilizavam o método antigo de recursos.
+
+## 2.3.0
+
+- Inclusão de bônus percentual de XP por simulação para Almanax e outros eventos.
+- Aplicação do bônus em Ração Vitaminada, Bolsa de Kolifichas, recursos e métodos combinados.
+- Exibição da XP efetiva por unidade e da quantidade total necessária para atingir o nível escolhido.
+- Quantidade necessária calculada também para recursos personalizados.
+- Integração do catálogo completo de recursos com a API pública do DofusDude.
+- Cache local do catálogo e fallback para os recursos incorporados ao projeto.
+- Identificação dos recursos cuja XP de alimentação precisa ser confirmada pelo usuário.
+- Aprimoramento visual da combinação entre recursos e complemento por ração ou bolsa.
+- Preservação do bônus de XP nas simulações e vendas antigas por migração defensiva.
+- Inclusão do bônus de XP nos cards, revisão e detalhes da simulação.
+- Atualização de testes, documentação e fontes de dados.
+
 ## 2.2.0
 
 - Aplicação do novo logotipo D4B com fundo externo transparente e novos favicons.

@@ -8,3 +8,10 @@
 @media(max-width:1150px){.method-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.simulation-actions{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:850px){.simulation-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.resource-search-row{grid-template-columns:1fr}.combined-flow{grid-template-columns:1fr}.flow-arrow{text-align:center;transform:rotate(90deg)}}
 @media(max-width:560px){.simulation-actions{grid-template-columns:1fr}.simulation-mini .compact-actions{grid-template-columns:repeat(5,36px)}.method-grid{grid-template-columns:1fr}.brand-logo{width:40px;height:40px}}
+
+@media(max-width:1180px){.form-grid.four{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:850px){.xp-overview-grid{grid-template-columns:1fr}.resource-add{grid-template-columns:1fr 1fr}.resource-add .field:first-child{grid-column:1/-1}}
+@media(max-width:560px){.form-grid.four,.resource-add{grid-template-columns:1fr}.resource-add .field:first-child{grid-column:auto}.bonus-presets .button{flex:1}.bonus-inline{align-items:flex-start}.xp-overview-grid>.section{min-height:98px}.resource-requirement-item{align-items:flex-start;flex-direction:column}.resource-requirement-item strong{text-align:left}}
+
+@media(max-width:1050px){.unified-resource-add{grid-template-columns:1fr 1fr}.unified-resource-add .resource-combobox{grid-column:1/-1}.unified-resource-add .button{align-self:end}}
+@media(max-width:560px){.unified-resource-add{grid-template-columns:1fr}.unified-resource-add .resource-combobox{grid-column:auto}.resource-combobox-list{max-height:300px}}

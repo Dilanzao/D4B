@@ -29,7 +29,7 @@ const bundle = (await readdir(assetsDir)).find(name => /^index-.*\.js$/.test(nam
 assert.ok(bundle, 'Built JavaScript bundle not found.');
 await import(pathToFileURL(resolve(assetsDir, bundle)).href);
 
-assert.match(document.title,/v2\.2\.0/);
+assert.match(document.title,/v2\.3\.1/);
 assert.equal(document.querySelectorAll('header .nav button').length >= 4,true);
 assert.ok(document.querySelector('[data-action="open-information"][data-section="how"]'));
 assert.ok(document.querySelector('#ad-slot-header'));
@@ -38,6 +38,9 @@ assert.ok(document.querySelector('#ad-slot-footer'));
 assert.ok(document.querySelector('img[src*="logo-header.webp"]'));
 
 assert.ok(document.querySelector('[data-action="new-simulation"]'));
+document.querySelector('[data-action="new-simulation"]')?.click();
+await new Promise(resolve=>setTimeout(resolve,0));
+assert.ok(document.querySelector('.stepper'));
 assert.ok(document.querySelector('footer'));
 
 // Consent choices must have an observable and persistent effect.

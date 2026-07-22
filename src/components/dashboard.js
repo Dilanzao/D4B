@@ -5,7 +5,7 @@ import { adSlot, escapeHtml, icon, t } from './common.js';
 import { renderSimulationGallery } from './simulationGallery.js';
 
 const charts = new Map();
-const methodKeys = { vitaminizedFood:'marketFood', kolitokenBag:'kolitokenBag', resources:'resources', combined:'combined' };
+const methodKeys = { vitaminizedFood:'marketFood', kolitokenBag:'kolitokenBag', resources:'combined', combined:'combined' };
 const reduceMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
 function startOfDay(date) { const copy=new Date(date); copy.setHours(0,0,0,0); return copy; }
@@ -149,7 +149,7 @@ export function renderDashboard(state) {
 
 function colorSet() { return { blue:'#4f91a8', gold:'#c39745', green:'#5f946b', red:'#b85a50', sand:'#d8bf8c', purple:'#8069a8', gray:'#827b72' }; }
 function moneyTooltip(language) { return context => formatKamas(context.raw?.y ?? context.raw ?? 0, language); }
-function makeChart(id, config) { const canvas=document.getElementById(id);if(!canvas)return;charts.get(id)?.destroy();const chart=new Chart(canvas,config);charts.set(id,chart); }
+function makeChart(id, config) { const canvas=document.getElementById(id);if(!canvas||typeof Chart!=='function')return;charts.get(id)?.destroy();const chart=new Chart(canvas,config);charts.set(id,chart); }
 function baseOptions(language, monetary=false) { return { responsive:true,maintainAspectRatio:false,animation:reduceMotion()?false:{duration:350},plugins:{legend:{position:'bottom'},tooltip:{callbacks:monetary?{label:moneyTooltip(language)}:{}}},scales:monetary?{y:{ticks:{callback:value=>formatCompactKamas(value,language)}}}:{}}; }
 
 export function destroyDashboardCharts() { charts.forEach(chart=>chart.destroy()); charts.clear(); }

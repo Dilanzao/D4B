@@ -1,5 +1,6 @@
 import { loadApplicationData, storage } from '../services/storageService.js';
 import { applyConsent, preferenceStorageAllowed } from '../services/consentService.js';
+import { getEmbeddedResourceCatalog } from '../services/resourceCatalogService.js';
 
 const initial = loadApplicationData();
 const listeners = new Set();
@@ -17,7 +18,12 @@ export const state = {
   dashboardFilters: {
     period: 'all', from: '', to: '', type: 'all', creature: 'all', channel: 'all', method: 'all', result: 'all', grouping: 'month', petMetric: 'quantity', channelMetric: 'quantity', methodMetric: 'averageCost'
   },
-  salesFilter: {}
+  salesFilter: {},
+  resourceCatalog: getEmbeddedResourceCatalog(initial.language),
+  resourceCatalogStatus: 'idle',
+  resourceCatalogSource: 'embedded',
+  resourceCatalogLoadedAt: null,
+  resourceCatalogError: null
 };
 
 export function subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); }
@@ -29,6 +35,14 @@ export function setSales(sales) { state.sales = sales; storage.saveSales(sales);
 export function setPreferences(preferences) { state.preferences = { ...state.preferences, ...preferences }; if (preferenceStorageAllowed(state.consent)) storage.savePreferences(state.preferences); emit(); }
 export function setConsent(consent) { state.consent = { ...state.consent, ...consent, essential: true }; storage.saveConsent(state.consent); applyConsent(state.consent); emit(); }
 export function setDashboardFilters(filters) { state.dashboardFilters = { ...state.dashboardFilters, ...filters }; emit(); }
+export function setResourceCatalog({ items, status = 'ready', source = 'dofusdude', loadedAt = null, error = null }) {
+  if (Array.isArray(items) && items.length) state.resourceCatalog = items;
+  state.resourceCatalogStatus = status;
+  state.resourceCatalogSource = source;
+  state.resourceCatalogLoadedAt = loadedAt;
+  state.resourceCatalogError = error;
+  emit();
+}
 export function openModal(modal) { state.modal = modal; emit(); }
 export function closeModal() { state.modal = null; emit(); }
 export function showToast(message, tone = 'success') {

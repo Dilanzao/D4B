@@ -10,14 +10,14 @@ export function validateStep(simulation, step, calculation) {
   if (step === 2) {
     if (!Number.isInteger(simulation.originLevel) || simulation.originLevel < 0 || simulation.originLevel >= MAX_LEVEL) errors.originLevel = 'levels';
     if (!Number.isInteger(simulation.targetLevel) || simulation.targetLevel <= simulation.originLevel || simulation.targetLevel > MAX_LEVEL) errors.targetLevel = 'levels';
+    if (!Number.isFinite(Number(simulation.xpBonusPercent)) || Number(simulation.xpBonusPercent) < 0 || Number(simulation.xpBonusPercent) > 1000) errors.xpBonusPercent = 'bonus';
   }
   if (step === 3) {
-    if (!['vitaminizedFood', 'kolitokenBag', 'resources', 'combined'].includes(simulation.upMethod)) errors.upMethod = 'method';
+    if (!['vitaminizedFood', 'kolitokenBag', 'combined'].includes(simulation.upMethod)) errors.upMethod = 'method';
     if (simulation.upMethod === 'vitaminizedFood' && simulation.marketFoodPrice <= 0) errors.marketFoodPrice = 'method';
     if (simulation.upMethod === 'kolitokenBag' && simulation.bagPrice <= 0) errors.bagPrice = 'method';
-    if (simulation.upMethod === 'resources' && (!calculation.resources.sufficient || calculation.resources.lines.length === 0)) errors.resources = 'resources';
     if (simulation.upMethod === 'combined') {
-      if (calculation.resources.lines.length === 0) errors.resources = 'combinedResources';
+      if (calculation.resources.activeLines.length === 0) errors.resources = 'combinedResources';
       if (!calculation.methods.combined.sufficient) errors.resources = 'combinedIncomplete';
       if (calculation.methods.combined.remainingXp > 0 && simulation.combinedRationSource === 'vitaminizedFood' && simulation.marketFoodPrice <= 0) errors.marketFoodPrice = 'method';
       if (calculation.methods.combined.remainingXp > 0 && simulation.combinedRationSource === 'kolitokenBag' && simulation.bagPrice <= 0) errors.bagPrice = 'method';

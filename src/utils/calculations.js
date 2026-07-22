@@ -10,6 +10,29 @@ import { getFeedingResourceById } from '../data/feedingResources.js';
 const finite = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const integer = (value) => Math.max(0, Math.round(finite(value)));
+const positiveDecimal = (value) => Math.max(0, finite(value));
+
+export function getXpBonusPercent(simulation = {}) {
+  return clamp(positiveDecimal(simulation.xpBonusPercent), 0, 1000);
+}
+
+export function getXpMultiplier(simulation = {}) {
+  return 1 + (getXpBonusPercent(simulation) / 100);
+}
+
+export function applyXpBonus(baseXp, simulationOrPercent = {}) {
+  const percent = typeof simulationOrPercent === 'number'
+    ? clamp(positiveDecimal(simulationOrPercent), 0, 1000)
+    : getXpBonusPercent(simulationOrPercent);
+  return positiveDecimal(baseXp) * (1 + percent / 100);
+}
+
+export function calculateQuantityNeeded(xpNeeded, baseXpPerUnit, simulationOrPercent = {}) {
+  const effectiveXp = applyXpBonus(baseXpPerUnit, simulationOrPercent);
+  if (xpNeeded <= 0) return 0;
+  if (effectiveXp <= 0) return 0;
+  return Math.ceil(xpNeeded / effectiveXp);
+}
 
 export function getLevelXpLimit(level) {
   const safe = clamp(Math.trunc(finite(level)), 0, MAX_LEVEL);
@@ -24,20 +47,29 @@ export function calculateXpNeeded(simulation) {
   return Math.max(0, XP_BY_LEVEL[target] - (XP_BY_LEVEL[origin] + currentWithin));
 }
 
-export function calculateRationMethod(xpNeeded, unitPrice) {
-  const quantity = Math.ceil(Math.max(0, xpNeeded) / RATION_XP);
+export function calculateRationMethod(xpNeeded, unitPrice, simulationOrPercent = {}) {
+  const xpBonusPercent = typeof simulationOrPercent === 'number'
+    ? clamp(positiveDecimal(simulationOrPercent), 0, 1000)
+    : getXpBonusPercent(simulationOrPercent);
+  const effectiveXpPerUnit = applyXpBonus(RATION_XP, xpBonusPercent);
+  const quantity = calculateQuantityNeeded(Math.max(0, xpNeeded), RATION_XP, xpBonusPercent);
   const totalCost = quantity * integer(unitPrice);
   return {
     id: 'vitaminizedFood', quantity, rationQuantity: quantity,
-    xpObtained: quantity * RATION_XP, totalCost, grossCost: totalCost,
+    baseXpPerUnit: RATION_XP, effectiveXpPerUnit, xpBonusPercent,
+    xpObtained: quantity * effectiveXpPerUnit, totalCost, grossCost: totalCost,
     costPerXp: xpNeeded > 0 ? totalCost / xpNeeded : 0,
-    sufficient: xpNeeded === 0 || (quantity * RATION_XP >= xpNeeded && integer(unitPrice) > 0),
+    sufficient: xpNeeded === 0 || (quantity * effectiveXpPerUnit >= xpNeeded && integer(unitPrice) > 0),
     leftoverKolifichas: 0, remainingXp: 0
   };
 }
 
-export function calculateBagMethod(xpNeeded, bagPrice) {
-  const rationQuantity = Math.ceil(Math.max(0, xpNeeded) / RATION_XP);
+export function calculateBagMethod(xpNeeded, bagPrice, simulationOrPercent = {}) {
+  const xpBonusPercent = typeof simulationOrPercent === 'number'
+    ? clamp(positiveDecimal(simulationOrPercent), 0, 1000)
+    : getXpBonusPercent(simulationOrPercent);
+  const effectiveXpPerUnit = applyXpBonus(RATION_XP, xpBonusPercent);
+  const rationQuantity = calculateQuantityNeeded(Math.max(0, xpNeeded), RATION_XP, xpBonusPercent);
   const kolifichasNeeded = rationQuantity * KOLIFICHAS_PER_RATION;
   const wholeBags = Math.ceil(kolifichasNeeded / KOLIFICHAS_PER_BAG);
   const unitBagPrice = integer(bagPrice);
@@ -45,59 +77,86 @@ export function calculateBagMethod(xpNeeded, bagPrice) {
   const proportionalCost = KOLIFICHAS_PER_BAG > 0 ? Math.round(kolifichasNeeded * (unitBagPrice / KOLIFICHAS_PER_BAG)) : 0;
   return {
     id: 'kolitokenBag', quantity: wholeBags, rationQuantity, kolifichasNeeded,
-    xpObtained: rationQuantity * RATION_XP, totalCost: grossCost, grossCost,
+    baseXpPerUnit: RATION_XP, effectiveXpPerUnit, xpBonusPercent,
+    xpObtained: rationQuantity * effectiveXpPerUnit, totalCost: grossCost, grossCost,
     proportionalCost, costPerXp: xpNeeded > 0 ? grossCost / xpNeeded : 0,
-    sufficient: xpNeeded === 0 || (rationQuantity * RATION_XP >= xpNeeded && unitBagPrice > 0),
+    sufficient: xpNeeded === 0 || (rationQuantity * effectiveXpPerUnit >= xpNeeded && unitBagPrice > 0),
     leftoverKolifichas: wholeBags * KOLIFICHAS_PER_BAG - kolifichasNeeded,
     remainingXp: 0
   };
 }
 
-export function calculateResourceMethod(resourceLines = [], xpNeeded = 0) {
+export function calculateResourceMethod(resourceLines = [], xpNeeded = 0, simulationOrPercent = {}) {
+  const xpBonusPercent = typeof simulationOrPercent === 'number'
+    ? clamp(positiveDecimal(simulationOrPercent), 0, 1000)
+    : getXpBonusPercent(simulationOrPercent);
   const lines = resourceLines.map((line) => {
     const resource = getFeedingResourceById(line.resourceId);
-    const customXp = Math.max(0, finite(line.customXp ?? line.xpUnit));
-    const xpUnit = resource?.xp ?? customXp;
-    const canonicalName = resource?.canonicalName || String(line.customName || line.resourceName || '').trim();
-    if (!canonicalName || xpUnit <= 0) return null;
+    const storedXp = positiveDecimal(line.xpUnit) || positiveDecimal(line.customXp);
+    const baseXpUnit = resource?.xp ?? storedXp;
+    const canonicalName = resource?.canonicalName || String(line.resourceName || line.customName || '').trim();
+    if (!canonicalName) return null;
     const quantity = Math.max(0, Math.trunc(finite(line.quantity)));
     const unitPrice = integer(line.unitPrice);
+    const effectiveXpUnit = baseXpUnit > 0 ? applyXpBonus(baseXpUnit, xpBonusPercent) : 0;
+    const baseXpTotal = baseXpUnit * quantity;
+    const xpTotal = effectiveXpUnit * quantity;
+    const quantityNeededAlone = baseXpUnit > 0 ? calculateQuantityNeeded(xpNeeded, baseXpUnit, xpBonusPercent) : 0;
     return {
       id: line.id,
       resourceId: resource?.id || line.resourceId || `custom-${line.id}`,
-      custom: !resource,
+      resourceAnkamaId: line.resourceAnkamaId ?? null,
+      resourceImageUrl: line.resourceImageUrl || '',
+      resourceLevel: Number.isFinite(Number(line.resourceLevel)) ? Number(line.resourceLevel) : null,
+      resourceName: canonicalName,
+      custom: Boolean(line.custom || (!resource && !line.resourceAnkamaId)),
+      xpSource: resource ? 'embedded' : (line.xpSource || 'manual'),
       canonicalName,
-      xpUnit,
+      baseXpUnit,
+      xpUnit: baseXpUnit,
+      effectiveXpUnit,
+      xpBonusPercent,
       quantity,
+      quantityNeededAlone,
+      baseXpTotal,
+      bonusXpTotal: Math.max(0, xpTotal - baseXpTotal),
       unitPrice,
-      xpTotal: xpUnit * quantity,
-      costTotal: unitPrice * quantity
+      xpTotal,
+      costTotal: baseXpUnit > 0 ? unitPrice * quantity : 0,
+      costNeededAlone: baseXpUnit > 0 ? unitPrice * quantityNeededAlone : 0,
+      validXp: baseXpUnit > 0
     };
-  }).filter((line) => line && line.quantity > 0);
-  const xpObtained = lines.reduce((sum, line) => sum + line.xpTotal, 0);
-  const totalCost = lines.reduce((sum, line) => sum + line.costTotal, 0);
-  const quantity = lines.reduce((sum, line) => sum + line.quantity, 0);
+  }).filter(Boolean);
+  const activeLines = lines.filter((line) => line.validXp && line.quantity > 0);
+  const xpObtained = activeLines.reduce((sum, line) => sum + line.xpTotal, 0);
+  const baseXpObtained = activeLines.reduce((sum, line) => sum + line.baseXpTotal, 0);
+  const totalCost = activeLines.reduce((sum, line) => sum + line.costTotal, 0);
+  const quantity = activeLines.reduce((sum, line) => sum + line.quantity, 0);
   const remainingXp = Math.max(0, xpNeeded - xpObtained);
   return {
-    id: 'resources', lines, quantity, xpObtained, totalCost, grossCost: totalCost,
+    id: 'resources', lines, activeLines, quantity, xpObtained, baseXpObtained,
+    bonusXpObtained: Math.max(0, xpObtained - baseXpObtained),
+    xpBonusPercent, totalCost, grossCost: totalCost,
     costPerXp: xpObtained > 0 ? totalCost / xpObtained : 0,
     sufficient: xpNeeded === 0 || xpObtained >= xpNeeded,
+    invalidXpCount: lines.filter((line) => !line.validXp).length,
     leftoverKolifichas: 0, remainingXp
   };
 }
 
-export function calculateCombinedMethod(resourceLines, xpNeeded, marketFoodPrice, bagPrice, rationSource = 'vitaminizedFood') {
-  const resources = calculateResourceMethod(resourceLines, xpNeeded);
+export function calculateCombinedMethod(resourceLines, xpNeeded, marketFoodPrice, bagPrice, rationSource = 'vitaminizedFood', simulationOrPercent = {}) {
+  const resources = calculateResourceMethod(resourceLines, xpNeeded, simulationOrPercent);
   const remainingXp = Math.max(0, xpNeeded - resources.xpObtained);
   const supplement = rationSource === 'kolitokenBag'
-    ? calculateBagMethod(remainingXp, bagPrice)
-    : calculateRationMethod(remainingXp, marketFoodPrice);
+    ? calculateBagMethod(remainingXp, bagPrice, simulationOrPercent)
+    : calculateRationMethod(remainingXp, marketFoodPrice, simulationOrPercent);
   const xpObtained = resources.xpObtained + supplement.xpObtained;
   const totalCost = resources.totalCost + supplement.totalCost;
   return {
     id: 'combined', quantity: resources.quantity + (supplement.rationQuantity || supplement.quantity || 0),
     resourceQuantity: resources.quantity,
     resourceXp: resources.xpObtained,
+    resourceBaseXp: resources.baseXpObtained,
     resourceCost: resources.totalCost,
     remainingXp,
     rationSource,
@@ -107,30 +166,35 @@ export function calculateCombinedMethod(resourceLines, xpNeeded, marketFoodPrice
     totalCost,
     grossCost: totalCost,
     costPerXp: xpNeeded > 0 ? totalCost / xpNeeded : 0,
-    sufficient: xpNeeded === 0 || (resources.lines.length > 0 && xpObtained >= xpNeeded && (remainingXp === 0 || supplement.sufficient)),
+    sufficient: xpNeeded === 0 || (resources.activeLines.length > 0 && xpObtained >= xpNeeded && (remainingXp === 0 || supplement.sufficient)),
     leftoverKolifichas: supplement.leftoverKolifichas || 0,
-    lines: resources.lines
+    lines: resources.lines,
+    xpBonusPercent: resources.xpBonusPercent
   };
 }
 
 export function calculateSimulation(simulation) {
   const xpNeeded = calculateXpNeeded(simulation);
-  const resources = calculateResourceMethod(simulation.resourceLines, xpNeeded);
+  const xpBonusPercent = getXpBonusPercent(simulation);
+  const xpMultiplier = getXpMultiplier(simulation);
+  const resources = calculateResourceMethod(simulation.resourceLines, xpNeeded, xpBonusPercent);
   const methods = {
-    vitaminizedFood: calculateRationMethod(xpNeeded, simulation.marketFoodPrice),
-    kolitokenBag: calculateBagMethod(xpNeeded, simulation.bagPrice),
+    vitaminizedFood: calculateRationMethod(xpNeeded, simulation.marketFoodPrice, xpBonusPercent),
+    kolitokenBag: calculateBagMethod(xpNeeded, simulation.bagPrice, xpBonusPercent),
     resources,
     combined: calculateCombinedMethod(
       simulation.resourceLines,
       xpNeeded,
       simulation.marketFoodPrice,
       simulation.bagPrice,
-      simulation.combinedRationSource || 'vitaminizedFood'
+      simulation.combinedRationSource || 'vitaminizedFood',
+      xpBonusPercent
     )
   };
-  const viable = Object.values(methods).filter((method) => method.sufficient && (method.totalCost > 0 || xpNeeded === 0));
+  const viable = ['vitaminizedFood','kolitokenBag','combined'].map((id) => methods[id]).filter((method) => method.sufficient && (method.totalCost > 0 || xpNeeded === 0));
   const cheapest = [...viable].sort((a, b) => a.totalCost - b.totalCost)[0]?.id ?? null;
-  const selected = methods[simulation.upMethod] || null;
+  const selectedMethod = simulation.upMethod === 'resources' ? 'combined' : simulation.upMethod;
+  const selected = methods[selectedMethod] || null;
   const upCost = selected?.sufficient ? integer(selected.totalCost) : 0;
   const originCost = integer(simulation.originCost);
   const additionalCosts = integer(simulation.additionalCosts);
@@ -141,7 +205,7 @@ export function calculateSimulation(simulation) {
   const netRevenue = salePrice - fee;
   const estimatedProfit = netRevenue - operationCost;
   const breakEven = feePercent > 0 ? Math.ceil(operationCost / (1 - feePercent / 100)) : operationCost;
-  return { xpNeeded, methods, cheapest, selected, upCost, originCost, additionalCosts, operationCost, salePrice, feePercent, fee, netRevenue, estimatedProfit, breakEven, resources };
+  return { xpNeeded, xpBonusPercent, xpMultiplier, methods, cheapest, selected, upCost, originCost, additionalCosts, operationCost, salePrice, feePercent, fee, netRevenue, estimatedProfit, breakEven, resources };
 }
 
 export function generateLevelRows(simulation, calculation = calculateSimulation(simulation)) {

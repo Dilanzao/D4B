@@ -3,7 +3,7 @@ import { calculateSimulation } from '../utils/calculations.js';
 import { formatCompactKamas } from '../utils/currency.js';
 import { escapeHtml, icon, imageTag, t } from './common.js';
 
-export const methodKey={vitaminizedFood:'marketFood',kolitokenBag:'kolitokenBag',resources:'resources',combined:'combined'};
+export const methodKey={vitaminizedFood:'marketFood',kolitokenBag:'kolitokenBag',resources:'combined',combined:'combined'};
 
 function cardActions(state, simulation, compact=false) {
   const cls=compact?'icon-button':'button compact secondary';
@@ -26,12 +26,12 @@ export function simulationCard(state, simulation, compact=false) {
   const method=t(state,`simulation.${methodKey[simulation.upMethod]||'marketFood'}`);
   if(compact) return `<article class="card simulation-mini">
     ${imageTag(simulation.creatureImageUrl||creature?.imageUrl,officialName,'creature-thumb compact-thumb')}
-    <div class="simulation-mini-copy"><h3>${escapeHtml(simulationTitle)}</h3><p>${simulation.originLevel} → ${simulation.targetLevel} · ${escapeHtml(method)}</p><small class="muted official-creature-name">${escapeHtml(officialName)}</small><strong class="${calc.estimatedProfit>=0?'positive':'negative'}">${formatCompactKamas(calc.estimatedProfit,state.language)}</strong></div>
+    <div class="simulation-mini-copy"><h3>${escapeHtml(simulationTitle)}</h3><p>${simulation.originLevel} → ${simulation.targetLevel} · ${escapeHtml(method)}</p><small class="muted official-creature-name">${escapeHtml(officialName)}</small>${calc.xpBonusPercent>0?`<div class="simulation-bonus"><span class="badge green">+${calc.xpBonusPercent}% XP</span></div>`:''}<strong class="${calc.estimatedProfit>=0?'positive':'negative'}">${formatCompactKamas(calc.estimatedProfit,state.language)}</strong></div>
     ${cardActions(state,simulation,true)}
   </article>`;
   return `<article class="card simulation-card"><div class="simulation-card-head">
     ${imageTag(simulation.creatureImageUrl||creature?.imageUrl,officialName,'creature-thumb')}
-    <div class="simulation-title-block"><span class="badge blue">${escapeHtml(simulation.creatureType==='Mascote'?t(state,'simulation.pet'):t(state,'simulation.petsmount'))}</span><h3>${escapeHtml(simulationTitle)}</h3><p class="tiny muted">${simulation.originLevel} → ${simulation.targetLevel} · ${escapeHtml(method)}</p><p class="official-creature-name">${escapeHtml(officialName)}</p></div>
+    <div class="simulation-title-block"><span class="badge blue">${escapeHtml(simulation.creatureType==='Mascote'?t(state,'simulation.pet'):t(state,'simulation.petsmount'))}</span><h3>${escapeHtml(simulationTitle)}</h3><p class="tiny muted">${simulation.originLevel} → ${simulation.targetLevel} · ${escapeHtml(method)}</p><p class="official-creature-name">${escapeHtml(officialName)}</p>${calc.xpBonusPercent>0?`<div class="simulation-bonus"><span class="badge green">+${calc.xpBonusPercent}% XP</span></div>`:''}</div>
     <span class="badge ${sold?'green':'blue'}">${escapeHtml(sold?t(state,'simulations.statusSold'):t(state,'simulations.statusReady'))}</span>
   </div><div class="metrics-list simulation-core-metrics">
     <div class="metric"><span>${escapeHtml(t(state,'simulations.operationCost'))}</span><strong>${formatCompactKamas(calc.operationCost,state.language)}</strong></div>

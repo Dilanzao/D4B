@@ -6,7 +6,7 @@ export default defineConfig({
     name: 'd4b-version-title',
     transformIndexHtml(html) { return html.replaceAll('__APP_VERSION__', APP_VERSION); }
   }],
-  base: './',
+  base: '/',
   preview: {
     host: '0.0.0.0',
     allowedHosts: ['dofus4business.com.br']

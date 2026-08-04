@@ -38,12 +38,14 @@ import { findResourceCatalogItem, getEmbeddedResourceCatalog, loadDofusDudeResou
 import { getRememberedResourceXp, rememberResourceXp } from './services/resourceXpMemoryService.js';
 import { calculateSimulation, calculateSaleProfit } from './utils/calculations.js';
 import { calculateCraftProject, calculateCraftSale, mergeInventory } from './modules/crafts/utils/craftCalculations.js';
+import { collectAncestorAnkamaIds, findIngredientById, flattenCalculatedIngredients } from './modules/crafts/utils/craftRecipeTree.js';
 import { searchCraftItems, fetchCraftItemDetails } from './modules/crafts/services/dofusDudeCraftService.js';
 import { parseKamas, formatNumber } from './utils/currency.js';
 import { createId, nowIso, toIsoLocalDateTime } from './utils/identifiers.js';
 import { includesNormalized } from './utils/textSearch.js';
 import { validateStep } from './utils/validation.js';
 import { installRouter, navigatePath, navigateTo } from './router/router.js';
+import { captureFocusSnapshot, restoreFocusSnapshot } from './utils/focusPreservation.js';
 
 const app = document.querySelector('#app');
 const pendingRoute = (() => { try { const value = sessionStorage.getItem('d4b_pending_route'); if (value) sessionStorage.removeItem('d4b_pending_route'); return value; } catch { return null; } })();
@@ -52,63 +54,12 @@ if (pendingRoute && pendingRoute.startsWith('/')) history.replaceState(null, '',
 let craftSearchTimer = null;
 let craftSearchController = null;
 
-function escapeSelectorValue(value) {
-  return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-}
-
-function focusSelectorFor(element) {
-  if (!(element instanceof HTMLElement) || !app.contains(element)) return null;
-  if (element.id) return `#${globalThis.CSS?.escape ? globalThis.CSS.escape(element.id) : escapeSelectorValue(element.id)}`;
-  const attributes = [
-    'data-field','data-resource-field','data-resource-draft','data-resource-picker-search','data-sale-field',
-    'data-sales-filter','data-dashboard-filter','data-consent-field','data-resource-new','data-craft-field',
-    'data-craft-ingredient-field','data-craft-item-search','data-craft-sale-field','data-inventory-adjust-field',
-    'data-global-sales-filter','data-inventory-filter'
-  ];
-  for (const attribute of attributes) {
-    if (!element.hasAttribute(attribute)) continue;
-    let selector = `[${attribute}]`;
-    const value = element.getAttribute(attribute);
-    if (value) selector = `[${attribute}="${escapeSelectorValue(value)}"]`;
-    if (element.dataset.id) selector += `[data-id="${escapeSelectorValue(element.dataset.id)}"]`;
-    if ((element.type === 'radio' || element.type === 'checkbox') && element.value) selector += `[value="${escapeSelectorValue(element.value)}"]`;
-    return selector;
-  }
-  return null;
-}
-
-function captureFocusSnapshot() {
-  const element = document.activeElement;
-  const selector = focusSelectorFor(element);
-  if (!selector) return null;
-  return {
-    selector,
-    inModal: Boolean(element.closest('.modal')),
-    selectionStart: typeof element.selectionStart === 'number' ? element.selectionStart : null,
-    selectionEnd: typeof element.selectionEnd === 'number' ? element.selectionEnd : null,
-    scrollLeft: element.scrollLeft || 0
-  };
-}
-
-function restoreFocusSnapshot(snapshot) {
-  if (!snapshot) return false;
-  const element = app.querySelector(snapshot.selector);
-  if (!element) return false;
-  element.focus({ preventScroll: true });
-  element.scrollLeft = snapshot.scrollLeft || 0;
-  if (typeof element.setSelectionRange === 'function' && snapshot.selectionStart !== null) {
-    const length = String(element.value ?? '').length;
-    element.setSelectionRange(Math.min(snapshot.selectionStart, length), Math.min(snapshot.selectionEnd ?? snapshot.selectionStart, length));
-  }
-  return true;
-}
-
 function newSimulation(base = {}) {
   const hasTarget = Object.prototype.hasOwnProperty.call(base, 'targetLevel');
   return normalizeSimulation({
     id: base.id || createId('simulation'), name: base.name || '', creatureType: base.creatureType || 'Mascote',
     creatureId: base.creatureId || '', creatureCanonicalName: base.creatureCanonicalName || '',
-    creatureImageUrl: base.creatureImageUrl || './assets/placeholders/creature-fallback.svg',
+    creatureImageUrl: base.creatureImageUrl || '/assets/placeholders/creature-fallback.svg',
     originLevel: base.originLevel ?? 0, currentXp: base.currentXp ?? 0, xpBonusPercent: base.xpBonusPercent ?? 0,
     targetLevel: hasTarget ? base.targetLevel : 100, upMethod: base.upMethod ?? '', marketFoodPrice: base.marketFoodPrice ?? 0,
     bagPrice: base.bagPrice ?? 0, combinedRationSource: base.combinedRationSource || 'vitaminizedFood',
@@ -138,7 +89,7 @@ function openEditor(simulation, mode = 'new', { navigate = true } = {}) {
 function newCraftProject(base = {}) {
   return normalizeCraftProject({
     id: base.id || createId('craft-project'), status: base.status || 'draft', desiredQuantity: base.desiredQuantity || 1,
-    ingredients: base.ingredients || [], saleChannel: base.saleChannel || 'HDV', costingMethod: base.costingMethod || 'weighted_average',
+    ingredients: base.ingredients || [], saleChannel: base.saleChannel || 'HDV', costingMethod: 'simple',
     createdAt: base.createdAt || nowIso(), updatedAt: nowIso(), ...base
   });
 }
@@ -194,7 +145,7 @@ function renderCookieBanner() {
 }
 
 function render() {
-  const focusSnapshot = captureFocusSnapshot();
+  const focusSnapshot = captureFocusSnapshot(app);
   destroyDashboardCharts();
   document.documentElement.lang = state.language;
   document.title = `Dofus4Business v${APP_VERSION}`;
@@ -203,7 +154,7 @@ function render() {
   requestAnimationFrame(() => {
     const shouldFocusModal = state.modal && !focusSnapshot?.inModal;
     if (shouldFocusModal) app.querySelector('.modal button,.modal input,.modal select')?.focus();
-    else restoreFocusSnapshot(focusSnapshot);
+    else restoreFocusSnapshot(app, focusSnapshot);
     mountDashboardCharts(state);
   });
 }
@@ -258,7 +209,7 @@ function updateEditorField(field, rawValue, shouldRender = true) {
     else sim[field] = parseKamas(rawValue);
   } else sim[field] = rawValue;
   if (field === 'originLevel' && sim.originLevel >= sim.targetLevel) sim.targetLevel = Math.min(100, sim.originLevel + 1);
-  if (field === 'creatureType') { sim.creatureId=''; sim.creatureCanonicalName=''; sim.creatureImageUrl='./assets/placeholders/creature-fallback.svg'; ed.creatureQuery=''; ed.comboOpen=true; }
+  if (field === 'creatureType') { sim.creatureId=''; sim.creatureCanonicalName=''; sim.creatureImageUrl='/assets/placeholders/creature-fallback.svg'; ed.creatureQuery=''; ed.comboOpen=true; }
   ed.errors = {};
   if (shouldRender) emit();
 }
@@ -268,6 +219,7 @@ function updateCraftField(field, rawValue, shouldRender = true) {
   const numeric=new Set(['desiredQuantity','marketUnitPrice','desiredSalePrice','additionalCosts']);
   project[field]=numeric.has(field)?parseKamas(rawValue):rawValue;
   if(field==='desiredQuantity')project.desiredQuantity=Math.max(1,Math.round(Number(rawValue)||1));
+  if(!['finalized','cancelled'].includes(project.status))project.status='draft';
   project.updatedAt=nowIso();
   if(shouldRender)emit();
 }
@@ -303,10 +255,10 @@ function updatePetResourceListDom() {
 
 function craftSearchMarkup() {
   const search=state.craftSearch;
-  if(search.status==='loading')return `<div class="combobox-empty">${escapeHtml(t(state,'common.loading'))}</div>`;
+  if(search.status==='loading')return `<div class="combobox-empty">${escapeHtml(t(state,'v3.crafts.filteringCraftable'))}</div>`;
   if(search.error)return `<div class="combobox-empty error-text">${escapeHtml(t(state,'v3.crafts.apiUnavailable'))}</div>`;
-  if(!search.results.length)return `<div class="combobox-empty">${escapeHtml(search.query?t(state,'common.noResults'):t(state,'v3.crafts.searchHint'))}</div>`;
-  return search.results.map(item=>`<button type="button" class="combobox-option item-option" data-action="select-craft-item" data-id="${item.ankamaId}" data-category="${escapeHtml(item.category)}">${imageTag(item.imageUrl,item.name,'combobox-thumb')}<span><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.type)} · ${escapeHtml(t(state,'simulation.levelShort'))} ${formatNumber(item.level)}</small></span></button>`).join('');
+  if(!search.results.length)return `<div class="combobox-empty">${escapeHtml(search.query?t(state,'v3.crafts.noCraftableResults'):t(state,'v3.crafts.searchHint'))}</div>`;
+  return search.results.map(item=>`<button type="button" class="combobox-option item-option" data-action="select-craft-item" data-id="${item.ankamaId}" data-category="${escapeHtml(item.category)}">${imageTag(item.imageUrl,item.name,'combobox-thumb','/assets/placeholders/item-fallback.svg')}<span><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.type)} · ${escapeHtml(t(state,'simulation.levelShort'))} ${formatNumber(item.level)} · ${formatNumber(item.recipe?.length||0)} ${escapeHtml(t(state,'v3.crafts.ingredients').toLocaleLowerCase())}</small></span></button>`).join('');
 }
 
 function updateCraftSearchListDom() {
@@ -320,7 +272,7 @@ function scheduleCraftSearch(query) {
   if(query.trim().length<2)return;
   craftSearchTimer=window.setTimeout(async()=>{
     craftSearchController=new AbortController();
-    try{const results=await searchCraftItems(query,state.language,{limit:50,signal:craftSearchController.signal});state.craftSearch={query,status:'ready',results,error:null};updateCraftSearchListDom();}
+    try{const results=await searchCraftItems(query,state.language,{limit:30,signal:craftSearchController.signal});state.craftSearch={query,status:'ready',results,error:null};updateCraftSearchListDom();}
     catch(error){if(error?.name==='AbortError')return;state.craftSearch={query,status:'error',results:[],error:String(error?.message||error)};updateCraftSearchListDom();}
   },280);
 }
@@ -331,33 +283,58 @@ async function selectCraftItem(ankamaId) {
   editor.itemQuery=summary.name||editor.itemQuery;editor.searchOpen=false;emit();
   try{
     const detail=await fetchCraftItemDetails(summary,state.language);
+    if(!detail.recipe?.length){showToast(t(state,'v3.crafts.noRecipe'),'error');return;}
     const quantity=Math.max(1,editor.project.desiredQuantity||1);
-    editor.project={...editor.project,ankamaId:detail.ankamaId,itemNameSnapshot:detail.name,itemImageSnapshot:detail.imageUrl,itemTypeSnapshot:detail.type,itemLevelSnapshot:detail.level,ingredients:(detail.recipe||[]).map(item=>normalizeIngredient({ankamaId:item.ankamaId,nameSnapshot:item.name,imageSnapshot:item.imageUrl,typeSnapshot:item.type,quantityPerUnit:item.quantity,totalQuantity:item.quantity*quantity,unitMarketPrice:state.craftPrices?.[item.ankamaId]||0,acquisitionMode:'buy'})),updatedAt:nowIso()};
+    editor.project={...editor.project,status:'draft',ankamaId:detail.ankamaId,itemNameSnapshot:detail.name,itemImageSnapshot:detail.imageUrl,itemTypeSnapshot:detail.type,itemLevelSnapshot:detail.level,professionTag:detail.professionTag||'unknown',ingredients:detail.recipe.map(item=>normalizeIngredient({ankamaId:item.ankamaId,nameSnapshot:item.name,imageSnapshot:item.imageUrl,typeSnapshot:item.type,typeNameIdSnapshot:item.typeNameId,professionTag:item.professionTag||'unknown',isCraftable:item.isCraftable,quantityPerUnit:item.quantity,totalQuantity:item.quantity*quantity,unitMarketPrice:state.craftPrices?.[item.ankamaId]||0,acquisitionMode:'buy'})),updatedAt:nowIso()};
     editor.itemQuery=detail.name;emit();
   }catch{showToast(t(state,'v3.crafts.apiUnavailable'),'error');}
 }
 
-async function loadSubrecipe(ingredientId) {
-  const editor=state.craftEditor;const line=editor?.project.ingredients.find(item=>item.id===ingredientId);if(!line?.ankamaId)return;
-  try{const detail=await fetchCraftItemDetails({ankamaId:line.ankamaId,type:line.typeSnapshot},state.language);line.subRecipe=(detail.recipe||[]).map(item=>normalizeIngredient({ankamaId:item.ankamaId,nameSnapshot:item.name,imageSnapshot:item.imageUrl,typeSnapshot:item.type,quantityPerUnit:item.quantity,totalQuantity:item.quantity,unitMarketPrice:state.craftPrices?.[item.ankamaId]||0,acquisitionMode:'buy'}));emit();}
-  catch{showToast(t(state,'v3.crafts.apiUnavailable'),'error');}
+async function loadSubrecipe(ingredientId, { openPlanner=false, pushToStack=false } = {}) {
+  const editor=state.craftEditor;const line=findIngredientById(editor?.project.ingredients||[],ingredientId);if(!line?.ankamaId)return false;
+  const ancestors=collectAncestorAnkamaIds(editor.project.ingredients,ingredientId)||[];
+  if(ancestors.some(id=>String(id)===String(line.ankamaId))){line.subRecipeStatus='error';showToast(t(state,'v3.crafts.recipeCycle'),'error');emit();return false;}
+  if(line.subRecipeLoaded&&line.subRecipe?.length){
+    if(openPlanner){
+      const stack=pushToStack&&state.modal?.type==='craft-recipe-planner'?[...(state.modal.recipeStack||[]),line.id]:[line.id];
+      openModal({type:'craft-recipe-planner',ingredientId:stack[0],recipeStack:stack});
+    }
+    return true;
+  }
+  line.subRecipeStatus='loading';emit();
+  try{
+    const detail=await fetchCraftItemDetails({ankamaId:line.ankamaId,type:line.typeSnapshot},state.language);
+    line.isCraftable=Boolean(detail.recipe?.length);
+    if(!line.isCraftable){line.acquisitionMode='buy';line.subRecipe=[];line.subRecipeLoaded=true;line.subRecipeStatus='idle';line.professionTag='unknown';showToast(t(state,'v3.crafts.notCraftable'),'error');emit();return false;}
+    line.professionTag=detail.professionTag||line.professionTag||'unknown';
+    line.subRecipe=(detail.recipe||[]).map(item=>normalizeIngredient({ankamaId:item.ankamaId,nameSnapshot:item.name,imageSnapshot:item.imageUrl,typeSnapshot:item.type,typeNameIdSnapshot:item.typeNameId,professionTag:item.isCraftable?(item.professionTag||'unknown'):'unknown',isCraftable:item.isCraftable,quantityPerUnit:item.quantity,totalQuantity:item.quantity,unitMarketPrice:state.craftPrices?.[item.ankamaId]||0,acquisitionMode:'buy'}));
+    line.subRecipeLoaded=true;line.subRecipeStatus='ready';emit();
+    if(openPlanner){
+      const stack=pushToStack&&state.modal?.type==='craft-recipe-planner'?[...(state.modal.recipeStack||[]),line.id]:[line.id];
+      openModal({type:'craft-recipe-planner',ingredientId:stack[0],recipeStack:stack});
+    }
+    return true;
+  } catch { line.subRecipeStatus='error';showToast(t(state,'v3.crafts.apiUnavailable'),'error');emit();return false; }
 }
 
 function saveCraftProject() {
   const editor=state.craftEditor;if(!editor)return;const project=editor.project;
   if(!project.ankamaId||!project.itemNameSnapshot){showToast(t(state,'v3.crafts.chooseItemFirst'),'error');return;}
-  const calc=calculateCraftProject(project);const saved=normalizeCraftProject({...project,status:project.status==='draft'?'planned':project.status,financialCost:calc.financialCost,economicCost:calc.economicCost,accountingCost:calc.accountingCost,replacementCost:calc.economicCost,updatedAt:nowIso()});
-  const exists=state.craftProjects.some(item=>item.id===saved.id);setCraftProjects(exists?state.craftProjects.map(item=>item.id===saved.id?saved:item):[saved,...state.craftProjects]);addActivity({module:'crafts',action:exists?'craft_project_updated':'craft_project_created',itemName:saved.itemNameSnapshot,itemImage:saved.itemImageSnapshot,entityId:saved.id,route:`/crafts/projetos/${encodeURIComponent(saved.id)}`,value:calc.financialCost});state.craftEditor=null;navigateTo('crafts');showToast(t(state,'v3.crafts.saveProject'));
+  const calc=calculateCraftProject(project,state.craftInventory);
+  const ready=calc.readiness==='ready';
+  const saved=normalizeCraftProject({...project,status:ready?'ready':'draft',totalCost:calc.totalCost,financialCost:calc.totalCost,economicCost:calc.totalCost,accountingCost:calc.totalCost,replacementCost:calc.totalCost,updatedAt:nowIso()});
+  const exists=state.craftProjects.some(item=>item.id===saved.id);setCraftProjects(exists?state.craftProjects.map(item=>item.id===saved.id?saved:item):[saved,...state.craftProjects]);addActivity({module:'crafts',action:exists?'craft_project_updated':'craft_project_created',itemName:saved.itemNameSnapshot,itemImage:saved.itemImageSnapshot,entityId:saved.id,route:`/crafts/projetos/${encodeURIComponent(saved.id)}`,value:calc.totalCost});state.craftEditor=null;navigateTo('crafts');showToast(ready?t(state,'v3.crafts.savedAsReady'):t(state,'v3.crafts.savedAsDraft'));
 }
 
 function completeCraftProject(projectId, forSale=false) {
-  const project=state.craftProjects.find(item=>item.id===projectId);if(!project)return;const calc=calculateCraftProject(project);
-  if(!project.ingredients.length||calc.missingPrices.length){showToast(t(state,'v3.crafts.missingPrices',{count:calc.missingPrices.length||project.ingredients.length}),'error');return;}
-  const batch=normalizeCraftBatch({projectId:project.id,ankamaId:project.ankamaId,itemNameSnapshot:project.itemNameSnapshot,itemImageSnapshot:project.itemImageSnapshot,itemTypeSnapshot:project.itemTypeSnapshot,producedQuantity:project.desiredQuantity,remainingQuantity:project.desiredQuantity,financialCost:calc.financialCost,economicCost:calc.economicCost,accountingCost:calc.accountingCost,unitCost:Math.round(calc.unitAccountingCost),desiredSalePrice:project.desiredSalePrice,status:forSale?'awaiting_sale':'in_stock',createdAt:nowIso()});
+  const project=state.craftProjects.find(item=>item.id===projectId);if(!project)return;const calc=calculateCraftProject(project,state.craftInventory);
+  if(calc.readiness!=='ready'){showToast(t(state,'v3.crafts.missingPrices',{count:calc.missingPrices.length+calc.missingRecipes.length}),'error');return;}
+  const batch=normalizeCraftBatch({projectId:project.id,ankamaId:project.ankamaId,itemNameSnapshot:project.itemNameSnapshot,itemImageSnapshot:project.itemImageSnapshot,itemTypeSnapshot:project.itemTypeSnapshot,professionTag:project.professionTag,producedQuantity:project.desiredQuantity,remainingQuantity:project.desiredQuantity,totalCost:calc.totalCost,financialCost:calc.totalCost,economicCost:calc.totalCost,accountingCost:calc.totalCost,unitCost:Math.round(calc.unitCost),desiredSalePrice:project.desiredSalePrice,status:forSale?'awaiting_sale':'in_stock',createdAt:nowIso()});
   let inventory=[...state.craftInventory];
   const existing=inventory.find(item=>String(item.ankamaId)===String(batch.ankamaId));const merged=normalizeInventoryItem({...mergeInventory(existing,batch),id:existing?.id||createId('inventory'),updatedAt:nowIso()});inventory=existing?inventory.map(item=>item.id===existing.id?merged:item):[merged,...inventory];
-  for(const ingredient of calc.ingredients){const used=Math.min(ingredient.useStockQuantity||0,ingredient.totalQuantity||0);if(!used)continue;inventory=inventory.map(item=>String(item.ankamaId)===String(ingredient.ankamaId)?normalizeInventoryItem({...item,quantity:Math.max(0,item.quantity-used),updatedAt:nowIso()}):item);}
-  setCraftBatches([batch,...state.craftBatches]);setCraftInventory(inventory);setCraftProjects(state.craftProjects.map(item=>item.id===project.id?normalizeCraftProject({...item,status:'finalized',completedAt:nowIso(),financialCost:calc.financialCost,economicCost:calc.economicCost,accountingCost:calc.accountingCost,updatedAt:nowIso()}):item));addActivity({module:'crafts',action:'craft_completed',itemName:project.itemNameSnapshot,itemImage:project.itemImageSnapshot,entityId:batch.id,route:'/crafts/estoque',value:calc.accountingCost});closeModal();navigateTo('craft-inventory');showToast(t(state,'v3.crafts.completeProduction'));
+  const stockUsage=new Map();for(const ingredient of flattenCalculatedIngredients(calc.ingredients)){if(!ingredient.stockUsed||ingredient.ankamaId==null)continue;const key=String(ingredient.ankamaId);stockUsage.set(key,(stockUsage.get(key)||0)+ingredient.stockUsed);}
+  inventory=inventory.map(item=>{const used=stockUsage.get(String(item.ankamaId))||0;return used?normalizeInventoryItem({...item,quantity:Math.max(0,item.quantity-used),updatedAt:nowIso()}):item;});
+  setCraftBatches([batch,...state.craftBatches]);setCraftInventory(inventory);setCraftProjects(state.craftProjects.map(item=>item.id===project.id?normalizeCraftProject({...item,status:'finalized',completedAt:nowIso(),totalCost:calc.totalCost,financialCost:calc.totalCost,economicCost:calc.totalCost,accountingCost:calc.totalCost,updatedAt:nowIso()}):item));addActivity({module:'crafts',action:'craft_completed',itemName:project.itemNameSnapshot,itemImage:project.itemImageSnapshot,entityId:batch.id,route:'/crafts/estoque',value:calc.totalCost});closeModal();navigateTo('crafts');showToast(t(state,'v3.crafts.completeProduction'));
 }
 
 function confirmCraftSale() {
@@ -416,13 +393,17 @@ function handleAction(button) {
   if(action==='duplicate-sale-simulation'){const sale=state.sales.find(x=>x.id===button.dataset.id);if(sale)openEditor(newSimulation({creatureId:sale.creatureId,creatureType:sale.creatureType,creatureCanonicalName:sale.creatureCanonicalName,creatureImageUrl:sale.creatureImageUrl,originLevel:sale.originLevel,targetLevel:sale.targetLevel,xpBonusPercent:sale.xpBonusPercent||0,upMethod:sale.upMethod,resourceLines:sale.resourceDetails,originCost:sale.originCost,estimatedSalePrice:sale.salePrice,estimatedSaleChannel:sale.saleChannel}),'duplicate');return;}
   if(action==='new-craft-project'){openCraftEditor(newCraftProject(),'new');return;}
   if(action==='edit-craft-project'){closeModal();const project=state.craftProjects.find(item=>item.id===button.dataset.id);if(project)openCraftEditor(project,'edit');return;}
+  if(action==='duplicate-craft-project'){closeModal();const project=state.craftProjects.find(item=>item.id===button.dataset.id);if(project){openCraftEditor(project,'duplicate');showToast(t(state,'v3.crafts.projectDuplicated'));}return;}
+  if(action==='delete-craft-project'){const project=state.craftProjects.find(item=>item.id===button.dataset.id);if(project)openModal({type:'confirm',title:t(state,'v3.crafts.deleteProjectTitle'),text:t(state,'v3.crafts.deleteProjectText'),confirmAction:'delete-craft-project',id:project.id});return;}
   if(action==='select-craft-item'){void selectCraftItem(button.dataset.id);return;}
-  if(action==='load-subrecipe'){void loadSubrecipe(button.dataset.id);return;}
-  if(action==='remove-craft-ingredient'){state.craftEditor.project.ingredients=state.craftEditor.project.ingredients.filter(item=>item.id!==button.dataset.id);emit();return;}
-  if(action==='save-craft-project'){saveCraftProject();return;}
+  if(action==='open-craft-recipe'){void loadSubrecipe(button.dataset.id,{openPlanner:true});return;}
+  if(action==='open-craft-recipe-level'){void loadSubrecipe(button.dataset.id,{openPlanner:true,pushToStack:true});return;}
+  if(action==='craft-recipe-breadcrumb'&&state.modal?.type==='craft-recipe-planner'){const index=Math.max(0,Number(button.dataset.index)||0);state.modal.recipeStack=(state.modal.recipeStack||[]).slice(0,index+1);emit();return;}
+  if(action==='use-max-stock'){const line=findIngredientById(state.craftEditor?.project.ingredients||[],button.dataset.id);if(line){const inventory=state.craftInventory.find(item=>line.ankamaId!=null&&String(item.ankamaId)===String(line.ankamaId));const required=Math.max(1,(line.quantityPerUnit||1)*(state.craftEditor.project.desiredQuantity||1));line.useStockQuantity=Math.min(required,inventory?.availableQuantity||0);emit();}return;}
+  if(action==='save-craft-project'||action==='save-craft-project-draft'||action==='save-craft-project-ready'||action==='save-craft-project-auto'){saveCraftProject();return;}
   if(action==='exit-craft-editor'){state.craftEditor=null;navigateTo('crafts');return;}
   if(action==='craft-project-details'){openModal({type:'craft-project-details',id:button.dataset.id});return;}
-  if(action==='complete-craft-project'){const project=state.craftProjects.find(item=>item.id===button.dataset.id)||state.craftEditor?.project;if(project)openModal({type:'complete-craft-project',id:project.id,draft:{forSale:false}});return;}
+  if(action==='complete-craft-project'){const project=state.craftProjects.find(item=>item.id===button.dataset.id)||state.craftEditor?.project;if(project){const calc=calculateCraftProject(project,state.craftInventory);if(calc.readiness!=='ready'){showToast(t(state,'v3.crafts.completeBlocked'),'error');return;}openModal({type:'complete-craft-project',id:project.id,draft:{forSale:false}});}return;}
   if(action==='confirm-complete-craft'){completeCraftProject(state.modal.id,Boolean(state.modal.draft?.forSale));return;}
   if(action==='toggle-inventory-sale'){const item=state.craftInventory.find(row=>row.id===button.dataset.id);if(item){const updated=normalizeInventoryItem({...item,forSale:!item.forSale,updatedAt:nowIso()});setCraftInventory(state.craftInventory.map(row=>row.id===item.id?updated:row));addActivity({module:'crafts',action:'craft_for_sale',itemName:item.itemNameSnapshot,itemImage:item.itemImageSnapshot,entityId:item.id,route:'/crafts/estoque',value:updated.desiredSalePrice*updated.availableQuantity});}return;}
   if(action==='register-craft-sale'){const item=state.craftInventory.find(row=>row.id===button.dataset.id);if(item)openModal({type:'register-craft-sale',inventoryItemId:item.id,draft:{quantity:1,unitSalePrice:item.desiredSalePrice||0,channel:'HDV',otherCosts:0,buyer:'',server:'',notes:'',saleDate:toIsoLocalDateTime()}});return;}
@@ -438,8 +419,9 @@ function handleAction(button) {
   if(action==='consent-reject'){saveConsent({preferences:false,analytics:false,advertising:false});return;}
   if(action==='consent-save'){saveConsent(state.modal?.draft||state.consent);return;}
   if(action==='close-modal'){closeModal();return;}
-  if(action==='confirm-modal'){const m=state.modal;if(m.confirmAction==='delete-simulation'){setSimulations(state.simulations.filter(x=>x.id!==m.id));showToast(t(state,'toast.simulationDeleted'));}if(m.confirmAction==='delete-sale'){const removed=state.sales.find(x=>x.id===m.id);cancelSaleSync(m.id);const remaining=state.sales.filter(x=>x.id!==m.id);setSales(remaining);if(removed&&!remaining.some(x=>x.simulationId===removed.simulationId))setSimulations(state.simulations.map(sim=>sim.id===removed.simulationId?{...sim,status:'ready',updatedAt:nowIso()}:sim));showToast(t(state,'toast.saleDeleted'));}closeModal();return;}
+  if(action==='confirm-modal'){const m=state.modal;if(m.confirmAction==='delete-simulation'){setSimulations(state.simulations.filter(x=>x.id!==m.id));showToast(t(state,'toast.simulationDeleted'));}if(m.confirmAction==='delete-sale'){const removed=state.sales.find(x=>x.id===m.id);cancelSaleSync(m.id);const remaining=state.sales.filter(x=>x.id!==m.id);setSales(remaining);if(removed&&!remaining.some(x=>x.simulationId===removed.simulationId))setSimulations(state.simulations.map(sim=>sim.id===removed.simulationId?{...sim,status:'ready',updatedAt:nowIso()}:sim));showToast(t(state,'toast.saleDeleted'));}if(m.confirmAction==='delete-craft-project'){setCraftProjects(state.craftProjects.filter(project=>project.id!==m.id));showToast(t(state,'v3.crafts.projectDeleted'));}closeModal();return;}
   if(action==='copy-pix'){void copyPix();return;}
+  if(action==='copy-name'){void copyText(button.dataset.name||'',t(state,'v303.nameCopied'));return;}
   if(action==='toggle-language'){const menu=app.querySelector('[data-language-menu]');menu.hidden=!menu.hidden;button.setAttribute('aria-expanded',String(!menu.hidden));return;}
   if(action==='set-language'){const language=button.dataset.language;if(state.simulationEditor?.simulation?.creatureId){state.simulationEditor.creatureQuery=getCreatureName(getCreatureById(state.simulationEditor.simulation.creatureId),language);}setLanguage(language);void refreshResourceCatalog(language);return;}
   if(action==='toggle-mobile'){const nav=app.querySelector('[data-mobile-nav]');nav.hidden=!nav.hidden;button.setAttribute('aria-expanded',String(!nav.hidden));return;}
@@ -458,9 +440,11 @@ function startSync(sale) {
   syncSale(started,patch=>setSales(state.sales.map(item=>item.id===sale.id?{...item,...patch}:item)),patch=>setSales(state.sales.map(item=>item.id===sale.id?{...item,...patch}:item)));
 }
 
-async function copyPix() {
-  let copied=false;try{await navigator.clipboard.writeText(PIX_KEY);copied=true;}catch{const input=document.createElement('textarea');input.value=PIX_KEY;input.style.position='fixed';input.style.opacity='0';document.body.append(input);input.select();copied=document.execCommand('copy');input.remove();}if(copied)showToast(t(state,'common.copied'));
+async function copyText(value, successMessage=t(state,'common.copied')) {
+  if(!value)return false;
+  let copied=false;try{await navigator.clipboard.writeText(value);copied=true;}catch{const input=document.createElement('textarea');input.value=value;input.style.position='fixed';input.style.opacity='0';document.body.append(input);input.select();copied=document.execCommand('copy');input.remove();}if(copied)showToast(successMessage);return copied;
 }
+async function copyPix() { return copyText(PIX_KEY,t(state,'common.copied')); }
 
 app.addEventListener('focusin',event=>{
   if(event.target.matches('[data-field="creatureQuery"]')&&state.simulationEditor&&!state.simulationEditor.comboOpen){state.simulationEditor.comboOpen=true;emit();return;}
@@ -480,7 +464,7 @@ app.addEventListener('change',event=>{
   const resourceDraftField=event.target.dataset.resourceDraft;if(resourceDraftField&&state.simulationEditor){const draft=state.simulationEditor.resourceDraft||(state.simulationEditor.resourceDraft={xp:0,quantity:1,unitPrice:0,custom:false});if(resourceDraftField==='xp')draft.xp=Math.max(0,Number(String(event.target.value).replace(',','.'))||0);else if(resourceDraftField==='quantity')draft.quantity=Math.max(1,Math.trunc(Number(event.target.value)||1));else if(resourceDraftField==='unitPrice')draft.unitPrice=parseKamas(event.target.value);emit();}
   const saleField=event.target.dataset.saleField;if(saleField&&state.modal?.type==='register-sale'){state.modal.draft[saleField]=['originCost','upCost','salePrice'].includes(saleField)?parseKamas(event.target.value):event.target.value;emit();}
   const craftField=event.target.dataset.craftField;if(craftField)updateCraftField(craftField,event.target.value,true);
-  const ingredientField=event.target.dataset.craftIngredientField;if(ingredientField&&state.craftEditor){const line=state.craftEditor.project.ingredients.find(item=>item.id===event.target.dataset.id);if(line){if(['unitMarketPrice','useStockQuantity'].includes(ingredientField))line[ingredientField]=parseKamas(event.target.value);else line[ingredientField]=event.target.value;line.totalQuantity=line.quantityPerUnit*state.craftEditor.project.desiredQuantity;emit();}}
+  const ingredientField=event.target.dataset.craftIngredientField;if(ingredientField&&state.craftEditor){const line=findIngredientById(state.craftEditor.project.ingredients,event.target.dataset.id);if(line){if(['unitMarketPrice','useStockQuantity'].includes(ingredientField))line[ingredientField]=parseKamas(event.target.value);else line[ingredientField]=event.target.value;line.totalQuantity=line.quantityPerUnit*state.craftEditor.project.desiredQuantity;if(!['finalized','cancelled'].includes(state.craftEditor.project.status))state.craftEditor.project.status='draft';if(ingredientField==='acquisitionMode'&&line.acquisitionMode==='craft'){void loadSubrecipe(line.id,{openPlanner:true});return;}emit();}}
   const craftSaleField=event.target.dataset.craftSaleField;if(craftSaleField&&state.modal?.type==='register-craft-sale'){state.modal.draft[craftSaleField]=['quantity','unitSalePrice','otherCosts'].includes(craftSaleField)?parseKamas(event.target.value):event.target.value;emit();}
   const inventoryAdjustField=event.target.dataset.inventoryAdjustField;if(inventoryAdjustField&&state.modal?.type==='inventory-adjust'){state.modal.draft[inventoryAdjustField]=parseKamas(event.target.value);emit();}
   const completeField=event.target.dataset.craftCompleteField;if(completeField&&state.modal?.type==='complete-craft-project'){state.modal.draft[completeField]=event.target.checked;}
@@ -500,7 +484,7 @@ app.addEventListener('input',event=>{
   const saleField=event.target.dataset.saleField;if(saleField&&state.modal?.type==='register-sale'){state.modal.draft[saleField]=['originCost','upCost','salePrice'].includes(saleField)?parseKamas(event.target.value):event.target.value;return;}
   if(event.target.matches('[data-craft-item-search]')&&state.craftEditor){state.craftEditor.itemQuery=event.target.value;state.craftEditor.searchOpen=true;scheduleCraftSearch(event.target.value);return;}
   const craftField=event.target.dataset.craftField;if(craftField){updateCraftField(craftField,event.target.value,false);return;}
-  const ingredientField=event.target.dataset.craftIngredientField;if(ingredientField&&state.craftEditor){const line=state.craftEditor.project.ingredients.find(item=>item.id===event.target.dataset.id);if(line){if(['unitMarketPrice','useStockQuantity'].includes(ingredientField))line[ingredientField]=parseKamas(event.target.value);else line[ingredientField]=event.target.value;}return;}
+  const ingredientField=event.target.dataset.craftIngredientField;if(ingredientField&&state.craftEditor){const line=findIngredientById(state.craftEditor.project.ingredients,event.target.dataset.id);if(line){if(['unitMarketPrice','useStockQuantity'].includes(ingredientField))line[ingredientField]=parseKamas(event.target.value);else line[ingredientField]=event.target.value;if(!['finalized','cancelled'].includes(state.craftEditor.project.status))state.craftEditor.project.status='draft';}return;}
   const craftSaleField=event.target.dataset.craftSaleField;if(craftSaleField&&state.modal?.type==='register-craft-sale'){state.modal.draft[craftSaleField]=['quantity','unitSalePrice','otherCosts'].includes(craftSaleField)?parseKamas(event.target.value):event.target.value;return;}
   const inventoryAdjustField=event.target.dataset.inventoryAdjustField;if(inventoryAdjustField&&state.modal?.type==='inventory-adjust'){state.modal.draft[inventoryAdjustField]=parseKamas(event.target.value);return;}
   const globalSalesFilter=event.target.dataset.globalSalesFilter;if(globalSalesFilter==='search'){state.globalSalesFilter.search=event.target.value;return;}

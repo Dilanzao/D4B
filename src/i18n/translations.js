@@ -566,3 +566,150 @@ const v3SaleChannelTranslations = {
   'es-ES': { v3: { sales: { server:'Servidor', trade:'Intercambio', guild:'Gremio', commerce:'Comercio', other:'Otro' } } }
 };
 for (const [language, additions] of Object.entries(v3SaleChannelTranslations)) deepMerge(translations[language], additions);
+
+const v301Translations = {
+  'pt-BR': { v3: { crafts: {
+    filteringCraftable: 'Verificando itens com receita…', noCraftableResults: 'Nenhum item fabricável foi encontrado. Recursos e itens sem receita não são exibidos.',
+    drop: 'Dropar', recipeLocked: 'Ingrediente da receita', immutableRecipe: 'Receita oficial bloqueada',
+    notReadyTitle: 'Projeto ainda não está pronto', readyBlockHelp: 'Preencha o preço de todos os ingredientes para liberar a produção e a venda.',
+    readyTitle: 'Projeto pronto para produção', readyHelp: 'Todos os ingredientes possuem preço e o projeto pode ser marcado como pronto.',
+    saveDraft: 'Salvar rascunho', markReady: 'Salvar como pronto', deleteProjectTitle: 'Excluir projeto de craft',
+    deleteProjectText: 'Excluir este projeto? Lotes e vendas já gerados permanecerão preservados.', projectDeleted: 'Projeto de craft excluído.',
+    projectDuplicated: 'Projeto duplicado como rascunho.', completeBlocked: 'Preencha todos os preços antes de concluir ou colocar o item à venda.'
+  } } },
+  'fr-FR': { v3: { crafts: {
+    filteringCraftable: 'Vérification des objets avec recette…', noCraftableResults: 'Aucun objet fabricable trouvé. Les ressources et objets sans recette sont masqués.',
+    drop: 'Obtenir en combat', recipeLocked: 'Ingrédient de la recette', immutableRecipe: 'Recette officielle verrouillée',
+    notReadyTitle: 'Le projet n’est pas encore prêt', readyBlockHelp: 'Renseignez le prix de tous les ingrédients pour débloquer la production et la vente.',
+    readyTitle: 'Projet prêt pour la production', readyHelp: 'Tous les ingrédients ont un prix et le projet peut être marqué prêt.',
+    saveDraft: 'Enregistrer le brouillon', markReady: 'Marquer comme prêt', deleteProjectTitle: 'Supprimer le projet',
+    deleteProjectText: 'Supprimer ce projet ? Les lots et ventes déjà créés seront conservés.', projectDeleted: 'Projet supprimé.',
+    projectDuplicated: 'Projet dupliqué en brouillon.', completeBlocked: 'Renseignez tous les prix avant de terminer ou mettre en vente.'
+  } } },
+  'en-US': { v3: { crafts: {
+    filteringCraftable: 'Checking items with recipes…', noCraftableResults: 'No craftable item was found. Resources and items without recipes are hidden.',
+    drop: 'Drop', recipeLocked: 'Recipe ingredient', immutableRecipe: 'Official recipe locked',
+    notReadyTitle: 'Project is not ready yet', readyBlockHelp: 'Enter a price for every ingredient to unlock production and selling.',
+    readyTitle: 'Project ready for production', readyHelp: 'Every ingredient has a price and the project can be marked ready.',
+    saveDraft: 'Save draft', markReady: 'Save as ready', deleteProjectTitle: 'Delete craft project',
+    deleteProjectText: 'Delete this project? Existing batches and sales will remain preserved.', projectDeleted: 'Craft project deleted.',
+    projectDuplicated: 'Project duplicated as a draft.', completeBlocked: 'Enter all prices before completing or listing the item for sale.'
+  } } },
+  'es-ES': { v3: { crafts: {
+    filteringCraftable: 'Comprobando objetos con receta…', noCraftableResults: 'No se encontró ningún objeto fabricable. Los recursos y objetos sin receta están ocultos.',
+    drop: 'Dropear', recipeLocked: 'Ingrediente de la receta', immutableRecipe: 'Receta oficial bloqueada',
+    notReadyTitle: 'El proyecto aún no está listo', readyBlockHelp: 'Indica el precio de todos los ingredientes para habilitar la producción y la venta.',
+    readyTitle: 'Proyecto listo para producir', readyHelp: 'Todos los ingredientes tienen precio y el proyecto puede marcarse como listo.',
+    saveDraft: 'Guardar borrador', markReady: 'Guardar como listo', deleteProjectTitle: 'Eliminar proyecto de craft',
+    deleteProjectText: '¿Eliminar este proyecto? Los lotes y ventas ya creados se conservarán.', projectDeleted: 'Proyecto eliminado.',
+    projectDuplicated: 'Proyecto duplicado como borrador.', completeBlocked: 'Indica todos los precios antes de finalizar o poner a la venta.'
+  } } }
+};
+for (const [language, additions] of Object.entries(v301Translations)) deepMerge(translations[language], additions);
+
+const v302Translations = {
+  'pt-BR': { common: { loading: 'Carregando…' }, dashboard: {
+    typeMetricLabel: 'Métrica — Mascote x Montascote',
+    channelMetricLabel: 'Métrica — canais de venda',
+    methodMetricLabel: 'Métrica — métodos de evolução'
+  }, v3: { crafts: {
+    editorDescription: 'Planeje a produção, defina como obter cada ingrediente e acompanhe o custo final.',
+    ingredientsHelp: 'Informe preços, aproveite itens do estoque ou abra sub-receitas quando decidir fabricar um ingrediente.',
+    totalCost: 'Custo total',
+    unitCost: 'Custo por unidade',
+    stockUse: 'Usar do estoque',
+    maxStock: 'Máx.',
+    fromStock: 'do estoque',
+    showRecipe: 'Mostrar receita',
+    hideRecipe: 'Ocultar receita',
+    priceRequired: 'Informe o preço da quantidade que será comprada.',
+    recipeRequired: 'Carregue e complete a sub-receita para fabricar este ingrediente.',
+    recipeCycle: 'Esta receita criaria uma referência circular e não pode ser expandida.',
+    notCraftable: 'Este ingrediente não possui receita e não pode ser fabricado.',
+    missingPrices: '{count} pendência(s) na árvore de receitas.',
+    loadSubrecipe: 'Carregar receita',
+    saveProject: 'Salvar projeto',
+    saveDraft: 'Salvar rascunho',
+    savedAsDraft: 'Rascunho salvo. Complete as pendências para liberar a produção.',
+    savedAsReady: 'Projeto salvo e pronto para produção.'
+  } } },
+  'fr-FR': { common: { loading: 'Chargement…' }, dashboard: {
+    typeMetricLabel: 'Mesure — Familier x Montilier',
+    channelMetricLabel: 'Mesure — canaux de vente',
+    methodMetricLabel: 'Mesure — méthodes d’évolution'
+  }, v3: { crafts: {
+    editorDescription: 'Planifiez la production, définissez comment obtenir chaque ingrédient et suivez le coût final.',
+    ingredientsHelp: 'Renseignez les prix, utilisez le stock disponible ou ouvrez les sous-recettes lorsque vous fabriquez un ingrédient.',
+    totalCost: 'Coût total', unitCost: 'Coût par unité', stockUse: 'Utiliser du stock', maxStock: 'Max.', fromStock: 'du stock',
+    showRecipe: 'Afficher la recette', hideRecipe: 'Masquer la recette', priceRequired: 'Renseignez le prix de la quantité achetée.',
+    recipeRequired: 'Chargez et complétez la sous-recette pour fabriquer cet ingrédient.', recipeCycle: 'Cette recette créerait une référence circulaire et ne peut pas être développée.',
+    notCraftable: 'Cet ingrédient ne possède pas de recette et ne peut pas être fabriqué.', missingPrices: '{count} élément(s) à compléter dans l’arbre des recettes.',
+    loadSubrecipe: 'Charger la recette', saveProject: 'Enregistrer le projet', saveDraft: 'Enregistrer le brouillon',
+    savedAsDraft: 'Brouillon enregistré. Complétez les éléments manquants pour débloquer la production.', savedAsReady: 'Projet enregistré et prêt pour la production.'
+  } } },
+  'en-US': { common: { loading: 'Loading…' }, dashboard: {
+    typeMetricLabel: 'Metric — Pet x Petsmount',
+    channelMetricLabel: 'Metric — sales channels',
+    methodMetricLabel: 'Metric — leveling methods'
+  }, v3: { crafts: {
+    editorDescription: 'Plan production, define how each ingredient will be obtained, and track the final cost.',
+    ingredientsHelp: 'Enter prices, use available inventory, or open sub-recipes when you choose to craft an ingredient.',
+    totalCost: 'Total cost', unitCost: 'Cost per unit', stockUse: 'Use from inventory', maxStock: 'Max.', fromStock: 'from inventory',
+    showRecipe: 'Show recipe', hideRecipe: 'Hide recipe', priceRequired: 'Enter the price for the quantity that will be purchased.',
+    recipeRequired: 'Load and complete the sub-recipe to craft this ingredient.', recipeCycle: 'This recipe would create a circular reference and cannot be expanded.',
+    notCraftable: 'This ingredient has no recipe and cannot be crafted.', missingPrices: '{count} pending item(s) in the recipe tree.',
+    loadSubrecipe: 'Load recipe', saveProject: 'Save project', saveDraft: 'Save draft',
+    savedAsDraft: 'Draft saved. Complete the pending items to unlock production.', savedAsReady: 'Project saved and ready for production.'
+  } } },
+  'es-ES': { common: { loading: 'Cargando…' }, dashboard: {
+    typeMetricLabel: 'Métrica — Mascota x Mascotura',
+    channelMetricLabel: 'Métrica — canales de venta',
+    methodMetricLabel: 'Métrica — métodos de subida'
+  }, v3: { crafts: {
+    editorDescription: 'Planifica la producción, define cómo obtener cada ingrediente y controla el coste final.',
+    ingredientsHelp: 'Indica precios, utiliza el inventario disponible o abre subrecetas cuando decidas fabricar un ingrediente.',
+    totalCost: 'Coste total', unitCost: 'Coste por unidad', stockUse: 'Usar del inventario', maxStock: 'Máx.', fromStock: 'del inventario',
+    showRecipe: 'Mostrar receta', hideRecipe: 'Ocultar receta', priceRequired: 'Indica el precio de la cantidad que se comprará.',
+    recipeRequired: 'Carga y completa la subreceta para fabricar este ingrediente.', recipeCycle: 'Esta receta crearía una referencia circular y no puede expandirse.',
+    notCraftable: 'Este ingrediente no tiene receta y no puede fabricarse.', missingPrices: '{count} elemento(s) pendientes en el árbol de recetas.',
+    loadSubrecipe: 'Cargar receta', saveProject: 'Guardar proyecto', saveDraft: 'Guardar borrador',
+    savedAsDraft: 'Borrador guardado. Completa lo pendiente para habilitar la producción.', savedAsReady: 'Proyecto guardado y listo para producir.'
+  } } }
+};
+for (const [language, additions] of Object.entries(v302Translations)) deepMerge(translations[language], additions);
+
+const v303Translations = {
+  'pt-BR': { v303: {
+    nameCopied: 'Nome copiado.', copyItemName: 'Copiar nome: {name}',
+    ingredientsModalHelp: 'Escolha como obter cada ingrediente. As sub-receitas abrem em uma janela própria para manter a leitura confortável em qualquer profundidade.',
+    readyMarketPrice: 'Preço pronto no mercado', readyMarketPriceHelp: 'Usado para comparar comprar o ingrediente pronto com fabricá-lo.',
+    marketComparisonHelp: 'Comprar pronto x fabricar', buyReady: 'Comprar pronto', craftCheaper: 'Fabricar está mais barato', buyCheaper: 'Comprar pronto está mais barato', sameCost: 'Os custos são iguais',
+    openRecipePlanner: 'Analisar receita', openRecipeLevel: 'Abrir sub-receita', recipePlanner: 'Planejador de receitas', recipePath: 'Caminho da receita', recipe: 'Receita', recipeCost: 'Custo desta receita',
+    recipeModalHelp: 'Cada nível é exibido separadamente. Use o caminho acima para voltar sem aumentar a largura da tela.'
+  } },
+  'fr-FR': { v303: {
+    nameCopied: 'Nom copié.', copyItemName: 'Copier le nom : {name}',
+    ingredientsModalHelp: 'Choisissez comment obtenir chaque ingrédient. Les sous-recettes s’ouvrent dans une fenêtre dédiée afin de rester lisibles quelle que soit la profondeur.',
+    readyMarketPrice: 'Prix de l’ingrédient prêt', readyMarketPriceHelp: 'Utilisé pour comparer l’achat de l’ingrédient prêt à sa fabrication.',
+    marketComparisonHelp: 'Acheter prêt ou fabriquer', buyReady: 'Acheter prêt', craftCheaper: 'Fabriquer coûte moins cher', buyCheaper: 'Acheter prêt coûte moins cher', sameCost: 'Les coûts sont identiques',
+    openRecipePlanner: 'Analyser la recette', openRecipeLevel: 'Ouvrir la sous-recette', recipePlanner: 'Planificateur de recettes', recipePath: 'Chemin de recette', recipe: 'Recette', recipeCost: 'Coût de cette recette',
+    recipeModalHelp: 'Chaque niveau est affiché séparément. Utilisez le chemin ci-dessus pour revenir sans élargir l’écran.'
+  } },
+  'en-US': { v303: {
+    nameCopied: 'Name copied.', copyItemName: 'Copy name: {name}',
+    ingredientsModalHelp: 'Choose how each ingredient will be obtained. Sub-recipes open in a dedicated window so every depth remains easy to read.',
+    readyMarketPrice: 'Ready-made market price', readyMarketPriceHelp: 'Used to compare buying the ingredient ready-made with crafting it.',
+    marketComparisonHelp: 'Buy ready-made vs craft', buyReady: 'Buy ready-made', craftCheaper: 'Crafting is cheaper', buyCheaper: 'Buying ready-made is cheaper', sameCost: 'The costs are equal',
+    openRecipePlanner: 'Analyse recipe', openRecipeLevel: 'Open sub-recipe', recipePlanner: 'Recipe planner', recipePath: 'Recipe path', recipe: 'Recipe', recipeCost: 'Recipe cost',
+    recipeModalHelp: 'Each level is shown separately. Use the path above to go back without making the page wider.'
+  } },
+  'es-ES': { v303: {
+    nameCopied: 'Nombre copiado.', copyItemName: 'Copiar nombre: {name}',
+    ingredientsModalHelp: 'Elige cómo obtener cada ingrediente. Las subrecetas se abren en una ventana propia para mantener la lectura clara en cualquier profundidad.',
+    readyMarketPrice: 'Precio listo en el mercado', readyMarketPriceHelp: 'Se usa para comparar comprar el ingrediente listo con fabricarlo.',
+    marketComparisonHelp: 'Comprar listo o fabricar', buyReady: 'Comprar listo', craftCheaper: 'Fabricar es más barato', buyCheaper: 'Comprar listo es más barato', sameCost: 'Los costes son iguales',
+    openRecipePlanner: 'Analizar receta', openRecipeLevel: 'Abrir subreceta', recipePlanner: 'Planificador de recetas', recipePath: 'Ruta de receta', recipe: 'Receta', recipeCost: 'Coste de esta receta',
+    recipeModalHelp: 'Cada nivel se muestra por separado. Usa la ruta superior para volver sin ampliar la pantalla.'
+  } }
+};
+for (const [language, additions] of Object.entries(v303Translations)) deepMerge(translations[language], additions);

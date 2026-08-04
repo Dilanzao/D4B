@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 
-const dist = resolve(import.meta.dirname, '../dist');
+const root = resolve(import.meta.dirname, '..');
+const dist = resolve(root, 'dist');
 const html = await readFile(resolve(dist, 'index.html'), 'utf8');
 let bundle = '';
 let css = '';
@@ -23,18 +24,31 @@ async function collectJs(dir) {
   return result;
 }
 if (!bundle) bundle = await collectJs(resolve(dist, 'src'));
-if (!css) css = await readFile(resolve(dist, 'src/styles/components.css'), 'utf8');
+if (!css) css = await readFile(resolve(root, 'src/styles/components.css'), 'utf8');
 
-assert.match(html, /Dofus4Business v3\.0\.0/);
+assert.match(html, /Dofus4Business v3\.0\.3/);
 assert.match(html, /id="app"/);
 for (const slot of ['ad-slot-header','ad-slot-sidebar','ad-slot-middle','ad-slot-footer']) assert.match(`${bundle}\n${html}`,new RegExp(slot));
-assert.match(bundle, /captureFocusSnapshot/);
-assert.match(bundle, /selectionStart/);
-assert.match(bundle, /setSelectionRange/);
+
+// Verify focus preservation in source: minification is allowed to rename function identifiers.
+const focusSource = await readFile(resolve(root, 'src/utils/focusPreservation.js'), 'utf8');
+const mainSource = await readFile(resolve(root, 'src/main.js'), 'utf8');
+assert.match(focusSource, /captureFocusSnapshot/);
+assert.match(focusSource, /selectionStart/);
+assert.match(focusSource, /selectionEnd/);
+assert.match(focusSource, /setSelectionRange/);
+assert.match(mainSource, /captureFocusSnapshot\(app\)/);
+assert.match(mainSource, /restoreFocusSnapshot\(app, focusSnapshot\)/);
+assert.match(mainSource, /updateCraftField\(craftField,event\.target\.value,false\)/);
+
 assert.match(bundle, /d4b_pending_route/);
 assert.match(css, /module-card/);
 assert.match(css, /craft-project/);
 assert.match(css, /global-kpi-grid/);
+assert.match(css, /recipe-planner-modal/);
+assert.match(mainSource, /open-craft-recipe-level/);
+assert.match(mainSource, /action==='copy-name'/);
+assert.match(css, /craft-editor-layout/);
 const notFound = await readFile(resolve(dist, '404.html'), 'utf8');
 assert.match(notFound, /d4b_pending_route/);
 console.log('DOM/build smoke test passed.');

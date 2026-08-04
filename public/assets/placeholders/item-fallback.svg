@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">Item sem imagem</title>
+  <desc id="desc">Representação genérica de um item do catálogo.</desc>
+  <rect width="128" height="128" rx="28" fill="#f7f0e2"/>
+  <path d="m64 20 35 20v47L64 108 29 87V40Z" fill="#d7b978" stroke="#95681f" stroke-width="5" stroke-linejoin="round"/>
+  <path d="m29 40 35 21 35-21M64 61v47" fill="none" stroke="#fff8e8" stroke-width="5" stroke-linejoin="round"/>
+  <circle cx="64" cy="63" r="10" fill="#95681f"/>
+</svg>

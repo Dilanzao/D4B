@@ -125,3 +125,32 @@ A v2.3.1 pode ser republicada sem migração reversa porque nenhuma chave antiga
 ## Estabilidade de campos e cursor
 
 Campos editáveis não disparam uma renderização completa durante `input`. O estado é atualizado por caractere, mas o DOM só é reconstruído em `change`, `blur` ou ações explícitas. Pesquisas atualizam somente a listbox correspondente. Dessa forma o nó do campo ativo, a seleção e o cursor permanecem intactos durante a digitação.
+
+## 19. Correções de compatibilidade da versão 3.0.1
+
+- A busca de produto fabricado utiliza apenas índices de itens não classificados como recursos e valida a existência de receita antes de exibir o resultado.
+- Os ingredientes são hidratados por `ankama_id` e `item_subtype`, preservando snapshots para uso offline e histórico.
+- A receita retornada pela API é imutável na interface; escolhas do usuário alteram somente obtenção, preço e uso de estoque.
+- Projetos usam estados `draft` e `ready` para separar planejamento incompleto de uma produção precificada.
+- A opção `drop` possui custo financeiro zero e custo econômico baseado no preço informado.
+- A preservação de foco foi isolada em `src/utils/focusPreservation.js`, permitindo teste direto sem depender dos identificadores do bundle minificado.
+
+## 20. Evolução compatível da versão 3.0.2
+
+A árvore de receitas é representada pelo próprio campo legado `subRecipe`, agora percorrido de forma recursiva. Nenhum limite de profundidade foi introduzido; referências circulares são bloqueadas pelo `ankama_id` dos ancestrais.
+
+O estoque permanece em `d4b_craft_inventory_v1` e é associado aos ingredientes pelo `ankama_id`. O uso de estoque deixa de ser uma modalidade de aquisição e passa a ser uma quantidade complementar aplicável antes de Comprar, Dropar ou Fabricar.
+
+Os campos financeiros, econômicos e contábeis permanecem aceitos apenas como aliases de migração para dados anteriores. A interface e os novos cálculos utilizam `totalCost` e `unitCost`.
+
+A etiqueta de profissão é armazenada em `professionTag`. Como o catálogo estrutural utilizado pelo módulo não fornece uma profissão diretamente em todas as respostas de receita, a etiqueta é derivada do tipo do item e utiliza `unknown` quando não há correspondência segura.
+
+## 21. Planejador modal de receitas — v3.0.3
+
+A árvore recursiva continua armazenada no projeto por meio de `subRecipe`, sem limite artificial de profundidade. A apresentação, porém, passou a utilizar `craftRecipePlanner.js`.
+
+O modal mantém uma pilha de identificadores em `modal.recipeStack`. Apenas um nível é renderizado por vez, e o breadcrumb permite voltar para qualquer ancestral. Essa separação preserva a recursividade da regra de negócio e evita o crescimento horizontal da interface.
+
+O custo alternativo de fabricação é calculado sem alterar `acquisitionMode`, permitindo comparar a compra do componente pronto com a fabricação recursiva. A mudança de estratégia continua explícita e somente a estratégia escolhida entra no custo final do projeto.
+
+A ação global `copy-name` utiliza o texto já traduzido e exibido na tela. Nenhum identificador técnico ou nome canônico diferente do idioma ativo é copiado.

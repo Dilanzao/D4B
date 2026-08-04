@@ -1,86 +1,58 @@
-# Relatório de validação — Dofus4Business v3.0.0
+# Relatório de validação — Dofus4Business v3.0.3
 
-Data da validação: 03/08/2026.
+Data da validação: 04/08/2026.
 
-## Resultado
+## Escopo validado
 
-A suíte `npm run check` foi concluída com sucesso no ambiente de geração.
+- preservação dos cálculos e dados do módulo Up de Pets;
+- planejador modal de receitas recursivas;
+- navegação por breadcrumb entre níveis de sub-receita;
+- ausência de indentação horizontal progressiva;
+- profissão somente em itens fabricáveis;
+- comparação entre comprar o componente pronto e fabricá-lo;
+- preço de mercado editável mesmo com a estratégia Fabricar;
+- cópia de nomes pelo ícone no idioma exibido;
+- preservação de foco e cursor nos campos numéricos;
+- catálogo multilíngue de criaturas e recursos;
+- build estático e validação estrutural.
 
-## Testes executados
-
-### Regressão do Up de Pets
-
-- catálogo com 147 criaturas preservado;
-- filtro entre Mascote e Montascote preservado;
-- nomes multilíngues preservados;
-- bônus de 50% transforma 500 XP em 750 XP;
-- quantidade de rações arredondada para cima;
-- método legado `resources` migra para `combined`;
-- memória de XP dos recursos preservada;
-- cenário de venda de referência mantém taxa de 37.000 K e lucro de 63.000 K;
-- payload antigo de vendas não envia o lucro.
-
-### Rotas e módulos
-
-- `/` abre o hub global;
-- `/pets/simulacoes` abre as simulações legadas;
-- `/pets/simulacoes/:id` reconhece o identificador;
-- `/crafts/projetos/novo` abre novo projeto;
-- `/crafts/projetos/:id` reconhece o projeto;
-- `/crafts/estoque`, `/vendas` e `/estoque` estão mapeadas;
-- `404.html` preserva deep links do GitHub Pages.
-
-### Crafts e Produção
-
-- cálculo de ingredientes por quantidade;
-- separação de custo financeiro e econômico;
-- valorização econômica dos recursos retirados do estoque;
-- custos adicionais;
-- comparação com compra do produto terminado;
-- criação normalizada de projeto;
-- criação de lote;
-- criação de estoque;
-- custo médio ponderado;
-- cálculo de venda parcial;
-- taxa de 2% no HDV;
-- custo e lucro congelados na venda.
-
-### Agregação global
-
-- venda antiga de pet adaptada em memória;
-- registro original não alterado;
-- venda de craft consolidada com vendas de pets;
-- filtro por módulo;
-- filtro por período personalizado;
-- nenhum registro duplicado na agregação do cenário de teste.
-
-### Cursor e campos numéricos
-
-Foram validados dois mecanismos:
-
-1. eventos `input` alteram o estado sem disparar renderização integral;
-2. renderizações inevitáveis capturam e restauram foco e seleção com `selectionStart`, `selectionEnd` e `setSelectionRange`.
-
-A validação cobre campos numéricos de pets, recursos, custos, ingredientes, estoque e vendas.
-
-### Estrutura e segurança do pacote
-
-- `.npmrc` aponta para `https://registry.npmjs.org/`;
-- `package-lock.json` contém somente URLs públicas do npm;
-- não há caminhos temporários do ambiente de geração no projeto entregue;
-- não há referências a registries internos da OpenAI;
-- arquivos obrigatórios presentes;
-- anúncios continuam desabilitados até configuração real;
-- build estático de contingência gerado com sucesso;
-- estrutura do `dist/` validada.
-
-## Observação sobre instalação no ambiente de geração
-
-O ambiente utilizado para gerar o artefato não disponibilizou acesso direto ao pacote Vite durante esta execução. Por isso, a validação local utilizou o build estático de contingência incluído no projeto. O `package-lock.json` e o `.npmrc` permanecem apontados exclusivamente para o registro público, e os comandos padrão estão preparados para execução normal fora desse ambiente:
+## Comandos executados
 
 ```bash
-npm install
-npm run dev
+find src scripts -name '*.js' -print0 | xargs -0 -n1 node --check
+npm run check
 npm run build
-npm run preview
 ```
+
+Também foi servido o conteúdo de `dist/` com um servidor HTTP local. A página inicial respondeu com status HTTP 200.
+
+## Resultados
+
+- 147 criaturas geradas e validadas;
+- 122 mascotes renderizados sem truncamento;
+- 125 recursos de teste renderizados sem truncamento;
+- smoke tests aprovados;
+- testes de interface aprovados;
+- teste de DOM/build aprovado;
+- validação estrutural aprovada;
+- teste do planejador modal aprovado;
+- teste da ação de copiar nomes aprovado;
+- teste de preservação de cursor aprovado;
+- nenhuma URL privada encontrada no `package-lock.json`;
+- todos os campos `resolved` do lock apontam para `https://registry.npmjs.org/`.
+
+## Instalação npm no ambiente de geração
+
+O ambiente de geração força por variável de ambiente um registry interno sobre o `.npmrc` do projeto. Por isso, a execução de `npm ci` neste ambiente tentou acessar esse registry e não pôde ser usada como prova de instalação pública.
+
+O arquivo entregue contém:
+
+```text
+registry=https://registry.npmjs.org/
+```
+
+O `package-lock.json` foi validado e possui somente URLs públicas do npm. A instalação deve ser executada normalmente no computador do usuário com `npm install` ou `npm ci`.
+
+## Observações não bloqueantes
+
+O validador do catálogo encontrou cinco pares de criaturas que compartilham imagens. Esses avisos já existiam na base e não impedem o funcionamento do site.

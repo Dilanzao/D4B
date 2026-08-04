@@ -8,7 +8,7 @@ function localizedDate(language) {
 export function renderFooter(state) {
   const date = localizedDate(state.language);
   return `${adSlot('ad-slot-footer','footer-ad container',state)}<footer class="footer"><div class="container compact-footer">
-    <div class="footer-brand"><img src="./assets/brand/logo-header.webp" alt="Dofus4Business"><div><strong>Dofus4Business</strong><small>v${APP_VERSION}</small></div></div>
+    <div class="footer-brand"><img src="/assets/brand/logo-header.webp" alt="Dofus4Business"><div><strong>Dofus4Business</strong><small>v${APP_VERSION}</small></div></div>
     <div class="footer-actions">
       <button class="button ghost" data-action="open-information" data-section="about">${escapeHtml(t(state,'footer.transparency'))}</button>
       <button class="button ghost" data-action="open-consent">${escapeHtml(t(state,'footer.privacyPreferences'))}</button>

@@ -42,6 +42,23 @@ export function adSlot(id, className, state) {
   return `<aside id="${id}" class="ad-slot ${className}" data-ad-slot="${id}" data-ads-enabled="${ADS_ENABLED}" data-ad-consent="${Boolean(state.consent?.advertising)}" aria-label="${escapeHtml(t(state,'common.advertisement'))}">${canLoadAds ? '<div class="adsense-mount" aria-hidden="true"></div>' : placeholder}</aside>`;
 }
 
-export function imageTag(src, alt, className = '') {
-  return `<img class="${className}" src="${escapeHtml(src || './assets/placeholders/creature-fallback.svg')}" alt="${escapeHtml(alt)}" loading="lazy" decoding="async" width="128" height="128" onerror="this.onerror=null;this.src='./assets/placeholders/creature-fallback.svg'">`;
+export function imageTag(src, alt, className = '', fallback = '') {
+  const itemLike = /(?:item|ingredient|craft|inventory|batch|activity)/i.test(className);
+  const fallbackUrl = fallback || (itemLike ? '/assets/placeholders/item-fallback.svg' : '/assets/placeholders/creature-fallback.svg');
+  const safeSrc = src && String(src).trim() ? String(src).trim() : fallbackUrl;
+  return `<img class="${className}" src="${escapeHtml(safeSrc)}" alt="${escapeHtml(alt)}" loading="lazy" decoding="async" width="128" height="128" onerror="this.onerror=null;this.src='${escapeHtml(fallbackUrl)}'">`;
+}
+
+
+export function copyableImage(src, name, className = '', fallback = '', label = '') {
+  const itemLike = /(?:item|ingredient|craft|inventory|batch|activity|resource)/i.test(className);
+  const fallbackUrl = fallback || (itemLike ? '/assets/placeholders/item-fallback.svg' : '/assets/placeholders/creature-fallback.svg');
+  const safeSrc = src && String(src).trim() ? String(src).trim() : fallbackUrl;
+  const accessible = label || name;
+  return `<button type="button" class="copyable-image-button" data-action="copy-name" data-name="${escapeHtml(name)}" aria-label="${escapeHtml(accessible)}" title="${escapeHtml(accessible)}"><img class="${className}" src="${escapeHtml(safeSrc)}" alt="${escapeHtml(name)}" loading="lazy" decoding="async" width="128" height="128" onerror="this.onerror=null;this.src='${escapeHtml(fallbackUrl)}'"></button>`;
+}
+
+export function copyableIcon(name, iconName = 'box', label = '') {
+  const accessible = label || name;
+  return `<button type="button" class="copyable-icon-button" data-action="copy-name" data-name="${escapeHtml(name)}" aria-label="${escapeHtml(accessible)}" title="${escapeHtml(accessible)}">${icon(iconName,20)}</button>`;
 }

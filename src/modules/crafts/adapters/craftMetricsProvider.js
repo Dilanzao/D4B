@@ -1,3 +1,5 @@
+import { calculateCraftProject } from '../utils/craftCalculations.js';
+
 export function adaptCraftSale(sale = {}) {
   return {
     id: sale.id,
@@ -35,13 +37,14 @@ export function getCraftModuleMetrics(state) {
   const awaiting = inventory.filter(item => item.forSale && item.availableQuantity > 0);
   const awaitingSaleValue = awaiting.reduce((sum, item) => sum + item.availableQuantity * (item.desiredSalePrice || 0), 0);
   const awaitingCost = awaiting.reduce((sum, item) => sum + item.availableQuantity * (item.weightedUnitCost || 0), 0);
-  const investedValue = active.reduce((sum, project) => sum + (project.financialCost || 0), 0) + inventoryValue;
+  const projectCalculations = new Map(projects.map(project => [project.id, calculateCraftProject(project, inventory)]));
+  const investedValue = active.reduce((sum, project) => sum + (projectCalculations.get(project.id)?.totalCost || project.totalCost || project.financialCost || 0), 0) + inventoryValue;
   const potentialRevenue = awaitingSaleValue;
   const potentialProfit = awaitingSaleValue - awaitingCost;
   const realizedRevenue = sales.reduce((sum, sale) => sum + sale.netRevenue, 0);
   const realizedProfit = sales.reduce((sum, sale) => sum + sale.realizedProfit, 0);
   const alerts = [
-    ...projects.filter(project => (project.ingredients || []).some(line => line.unitMarketPrice <= 0)).map(project => ({ type: 'missing_price', entityId: project.id, message: project.itemNameSnapshot })),
+    ...projects.filter(project => projectCalculations.get(project.id)?.readiness !== 'ready').map(project => ({ type: 'missing_price', entityId: project.id, message: project.itemNameSnapshot })),
     ...awaiting.filter(item => !item.desiredSalePrice).map(item => ({ type: 'missing_sale_price', entityId: item.id, message: item.itemNameSnapshot }))
   ];
   const recentActivities = [...(state.activities || [])].filter(item => item.module === 'crafts');

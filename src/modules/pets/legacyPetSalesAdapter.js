@@ -12,7 +12,7 @@ export function adaptLegacyPetSale(sale = {}) {
     sourceId: sale.simulationId || null,
     itemReference: sale.creatureId || sale.creatureCanonicalName || sale.id,
     itemNameSnapshot: sale.creatureCanonicalName || sale.simulationName || 'Pet',
-    itemImageSnapshot: sale.creatureImageUrl || './assets/placeholders/creature-fallback.svg',
+    itemImageSnapshot: sale.creatureImageUrl || '/assets/placeholders/creature-fallback.svg',
     ankamaId: sale.creatureAnkamaId ?? null,
     quantity,
     unitSalePrice: grossRevenue,

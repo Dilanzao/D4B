@@ -1,5 +1,50 @@
 # Changelog
 
+## 3.0.3
+
+- Sub-receitas movidas para um planejador modal com navegação por níveis e breadcrumb.
+- Remoção da indentação horizontal progressiva em cadeias profundas de receitas.
+- Profissão exibida somente para itens efetivamente fabricáveis.
+- Comparação recursiva entre comprar o ingrediente pronto e fabricá-lo.
+- Preço de mercado do ingrediente mantido editável em qualquer estratégia.
+- Clique no ícone para copiar nomes no idioma ativo em Crafts e Up de Pets.
+- Ajustes responsivos do planejador de receitas.
+- Testes adicionais de regressão para modal, comparação e cópia de nomes.
+
+## 3.0.2
+
+- Integração efetiva do estoque global à árvore de receitas, com quantidade disponível e preenchimento pela opção Máx.
+- Manutenção de estoque acessível diretamente nos cards dos projetos e itens globais.
+- Árvore recursiva de receitas sem limite artificial de profundidade, com proteção contra ciclos.
+- Sub-receitas ocultadas automaticamente quando o ingrediente volta para Comprar ou Dropar.
+- Opção Fabricar exibida somente para ingredientes que possuem receita confirmada.
+- Inclusão de etiquetas de profissão no item produzido e nos ingredientes fabricáveis.
+- Remoção da modalidade separada Usar estoque; o estoque passa a complementar qualquer forma de obtenção.
+- Unificação dos custos de Crafts em Custo total e Custo por unidade.
+- Remoção do método de custeio da interface.
+- Unificação de Salvar projeto e Salvar rascunho em um único botão condicionado à prontidão da receita.
+- Correção do carregamento dos gráficos do painel de vendas.
+- Correção do rótulo do seletor de métrica do gráfico de canais de venda.
+- Reorganização responsiva do editor, ingredientes, árvore e cards de Crafts.
+- Preservação reforçada de foco e cursor nos campos numéricos durante recálculos.
+
+## 3.0.1
+
+- Inclusão da opção **Dropar** na obtenção dos ingredientes.
+- Pesquisa de Crafts restrita a itens fabricáveis com receita, sem consultar a categoria Recurso.
+- Hidratação dos ingredientes da receita por `ankama_id`, com nome, tipo, nível e imagem.
+- Correção dos caminhos de logo, favicon, placeholders e imagens em rotas internas.
+- Inclusão de fallback próprio para imagens de itens.
+- Bloqueio da exclusão de ingredientes pertencentes à receita oficial.
+- Separação entre salvar rascunho e salvar projeto pronto.
+- Bloqueio de conclusão, produção e disponibilização para venda enquanto houver ingrediente sem preço.
+- Melhoria visual do estado de prontidão do projeto.
+- Inclusão de Editar, Duplicar, Ver detalhes, Concluir e Excluir diretamente nos cards de Crafts.
+- Correção funcional da exclusão de projetos de Crafts.
+- Remoção do atalho global de Estoque da navegação superior.
+- Preservação reforçada de foco, seleção e posição do cursor em campos numéricos.
+- Correção do teste de DOM para não depender de nomes de funções preservados após minificação.
+
 ## 3.0.0
 
 - Transformação da página inicial em hub de módulos e dashboard econômico global.

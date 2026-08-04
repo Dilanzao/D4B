@@ -1,6 +1,6 @@
-# Dofus4Business v3.0.0
+# Dofus4Business v3.0.3
 
-O Dofus4Business é uma plataforma modular de gestão econômica para jogadores de DOFUS. A versão 3.0.0 transforma a página inicial em um hub de negócios e mantém o módulo legado de **Up de Pets** isolado, enquanto adiciona o primeiro MVP de **Crafts e Produção**.
+O Dofus4Business é uma plataforma modular de gestão econômica para jogadores de DOFUS. A linha 3.0 transforma a página inicial em um hub de negócios e mantém o módulo legado de **Up de Pets** isolado. A versão 3.0.3 amadurece o módulo de **Crafts e Produção** com árvore recursiva de receitas, estoque integrado e custos simplificados.
 
 ## O que existe nesta versão
 
@@ -32,22 +32,29 @@ O acesso principal agora é feito por `/pets`, com simulações em `/pets/simula
 
 ### Crafts e Produção
 
-- pesquisa de itens pela API pública DofusDude;
-- consulta de receitas e ingredientes;
+- pesquisa de itens fabricáveis pela API pública DofusDude, excluindo recursos e itens sem receita;
+- consulta da receita oficial e hidratação individual dos ingredientes por `ankama_id`;
+- nomes e imagens reais dos ingredientes, com fallback local;
 - quantidade desejada;
 - preços manuais;
-- compra, uso de estoque ou sub-receita por ingrediente;
-- custo financeiro, econômico e contábil;
+- compra, drop ou fabricação por ingrediente, com uso parcial do estoque disponível em qualquer modalidade;
+- custo total e custo por unidade;
 - comparação entre fabricar e comprar o produto terminado;
-- criação e edição de projetos;
+- criação, edição, duplicação, detalhamento e exclusão de projetos;
+- receita preservada, sem exclusão manual de ingredientes;
+- árvore de sub-receitas recursiva sem limite artificial de profundidade;
+- opção Fabricar somente quando o ingrediente possui receita;
+- etiquetas de profissão para itens produzidos e ingredientes craftáveis;
+- um único botão de salvamento: grava rascunho enquanto houver pendências e projeto pronto quando toda a árvore estiver completa;
 - conclusão da produção;
 - criação de lote fabricado;
-- estoque com custo médio ponderado;
+- estoque integrado aos cards de projeto e reutilizável em receitas posteriores;
 - reserva e disponibilidade;
 - venda parcial;
 - taxa de 2% para HDV;
 - lucro e margem realizados;
 - snapshots do item e dos valores históricos.
+- campos numéricos atualizados sem perder foco ou posição do cursor.
 
 ## Arquitetura
 
@@ -131,10 +138,26 @@ Esse comando valida:
 - lotes, estoque e venda parcial;
 - adaptação de vendas legadas;
 - agregação global;
-- preservação de foco e cursor nos campos numéricos;
+- preservação de foco, seleção e posição do cursor nos campos numéricos;
+- pesquisa de Crafts sem a categoria Recurso;
+- hidratação de nomes e imagens dos ingredientes;
+- bloqueio de produção com preços pendentes;
 - arquivos obrigatórios;
 - URLs públicas do `package-lock.json`;
 - build e estrutura do `dist`.
+
+## Correção de foco nos campos numéricos
+
+Os eventos de digitação atualizam o estado sem reconstruir a página inteira. Quando uma renderização é inevitável, o projeto captura e restaura o campo ativo, `selectionStart`, `selectionEnd`, direção da seleção e rolagem interna. O teste de regressão verifica o código-fonte desse mecanismo, em vez de procurar nomes de funções no bundle minificado.
+
+## Regras de prontidão de Crafts
+
+- Os ingredientes da receita não podem ser removidos.
+- O mesmo botão salva como **rascunho** enquanto houver preços ou sub-receitas pendentes e como **projeto pronto** quando toda a árvore estiver completa.
+- Para concluir a produção ou disponibilizar o lote para venda, toda quantidade comprada precisa ter preço e todo ingrediente marcado como Fabricar precisa ter sua sub-receita carregada e completa.
+- Em **Dropar**, a quantidade restante não adiciona custo ao projeto.
+- O estoque disponível pode ser utilizado parcialmente antes de Comprar, Dropar ou Fabricar o restante.
+- Ingredientes fabricados usam o custo recursivo da própria sub-receita, sem limite artificial de profundidade.
 
 ## Rotas
 
@@ -210,7 +233,7 @@ npm install
 npm run check
 npm run build
 git add .
-git commit -m "Dofus4Business v3.0.0"
+git commit -m "Dofus4Business v3.0.3"
 git push
 ```
 
@@ -236,7 +259,7 @@ Enquanto `ADS_ENABLED` estiver como `false`, aparecem placeholders discretos. O 
 A versão central está em:
 
 ```js
-export const APP_VERSION = "3.0.0";
+export const APP_VERSION = "3.0.3";
 ```
 
 ## Estrutura resumida
@@ -267,3 +290,19 @@ dofus4business/
     ├── styles/
     └── utils/
 ```
+
+## Planejador de sub-receitas na v3.0.3
+
+Ingredientes fabricáveis são analisados em uma janela própria, com navegação por caminho. Cada nível da receita ocupa toda a largura disponível, evitando que cadeias profundas sejam empurradas indefinidamente para a direita.
+
+Para cada ingrediente fabricável, o projeto preserva simultaneamente:
+
+- o preço do item pronto no mercado;
+- a receita carregada;
+- o custo recursivo de fabricação;
+- a profissão necessária, quando identificável;
+- a possibilidade de comprar, dropar ou fabricar.
+
+O preço pronto permanece editável mesmo quando a estratégia selecionada é fabricar. Dessa forma, a interface compara as duas alternativas sem obrigar o usuário a apagar a sub-receita. Recursos sem receita não exibem profissão nem a ação de fabricar.
+
+Os ícones de criaturas, itens, ingredientes, recursos, Ração Vitaminada e Bolsa de Kolifichas podem ser clicados para copiar o nome exibido no idioma ativo.

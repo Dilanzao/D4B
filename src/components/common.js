@@ -26,7 +26,12 @@ export function icon(name, size = 20) {
     search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
     sync:'<path d="M20 7h-5V2M4 17h5v5"/><path d="M5.1 9a8 8 0 0 1 13.2-3L20 7M4 17l1.7 1a8 8 0 0 0 13.2-3"/>',
     pix:'<path d="M8.4 4.4 4.8 8a2.8 2.8 0 0 0 0 4l3.6 3.6a2.8 2.8 0 0 0 4 0l3.6-3.6a2.8 2.8 0 0 0 0-4l-3.6-3.6a2.8 2.8 0 0 0-4 0Z"/><path d="m8 12 2-2a2.8 2.8 0 0 1 4 0l2 2"/>',
-    external:'<path d="M14 3h7v7M10 14 21 3M21 14v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h6"/>'
+    external:'<path d="M14 3h7v7M10 14 21 3M21 14v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h6"/>',
+    home:'<path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10M9 20v-6h6v6"/>',
+    craft:'<path d="M14.7 6.3a4 4 0 0 0-5.6 5.6L3 18l3 3 6.1-6.1a4 4 0 0 0 5.6-5.6l-2.4 2.4-3-3Z"/><path d="m16 4 4 4"/>',
+    box:'<path d="m21 8-9 5-9-5 9-5 9 5Z"/><path d="m3 8 9 5 9-5v9l-9 5-9-5Z"/><path d="M12 13v9"/>',
+    list:'<path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/>',
+    alert:'<path d="M10.3 2.9 1.8 17a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 2.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/>'
   };
   return `<svg aria-hidden="true" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${paths[name] || paths.details}</svg>`;
 }

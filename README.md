@@ -1,304 +1,222 @@
-# Dofus4Business v2.3.1
+# Dofus4Business v3.0.0
 
-Aplicação web estática para simular a compra, evolução e venda de mascotes e montascotes no DOFUS, controlar vendas reais e analisar resultados econômicos.
+O Dofus4Business é uma plataforma modular de gestão econômica para jogadores de DOFUS. A versão 3.0.0 transforma a página inicial em um hub de negócios e mantém o módulo legado de **Up de Pets** isolado, enquanto adiciona o primeiro MVP de **Crafts e Produção**.
 
-A versão 2.3.1 preserva as funções anteriores e corrige o fluxo de seleção e uso de recursos:
+## O que existe nesta versão
 
-- uma única listbox para pesquisar, escolher ou cadastrar um recurso personalizado;
-- catálogo completo exibido quando o campo de pesquisa está vazio;
-- listagem completa de mascotes e montascotes antes da pesquisa;
-- recurso escolhido exibido com nome e imagem;
-- memorização da XP por recurso no navegador;
-- método unificado **Utilizar Recursos**, com complemento automático por ração ou bolsa somente quando necessário;
-- recursos podem cobrir 100% da XP sem custo de complemento;
-- preservação do foco e do cursor nos campos durante os recálculos automáticos.
+### Página inicial global
 
-## Tecnologia
+- cards de acesso aos módulos;
+- indicadores consolidados;
+- filtro por módulo e período;
+- lucro potencial separado de lucro realizado;
+- atividades recentes;
+- itens explicitamente marcados como aguardando venda;
+- atalhos para nova simulação e novo projeto de craft.
 
-- Vite 8;
+### Up de Pets
+
+O módulo existente foi preservado. Continuam funcionando:
+
+- simulações de mascotes e montascotes;
+- bônus de XP;
+- Ração Vitaminada, Bolsa de Kolifichas e recursos;
+- método combinado;
+- memória de XP dos recursos;
+- catálogo multilíngue;
+- vendas e sincronização existentes;
+- dashboard gerencial do módulo;
+- migrações e chaves legadas do `localStorage`.
+
+O acesso principal agora é feito por `/pets`, com simulações em `/pets/simulacoes` e vendas em `/pets/vendas`.
+
+### Crafts e Produção
+
+- pesquisa de itens pela API pública DofusDude;
+- consulta de receitas e ingredientes;
+- quantidade desejada;
+- preços manuais;
+- compra, uso de estoque ou sub-receita por ingrediente;
+- custo financeiro, econômico e contábil;
+- comparação entre fabricar e comprar o produto terminado;
+- criação e edição de projetos;
+- conclusão da produção;
+- criação de lote fabricado;
+- estoque com custo médio ponderado;
+- reserva e disponibilidade;
+- venda parcial;
+- taxa de 2% para HDV;
+- lucro e margem realizados;
+- snapshots do item e dos valores históricos.
+
+## Arquitetura
+
+A análise estrutural e as decisões de compatibilidade estão em [ARCHITECTURE.md](./ARCHITECTURE.md).
+
+Resumo:
+
+- Vite;
 - JavaScript moderno com módulos ES;
-- HTML semântico;
-- CSS responsivo sem framework visual;
-- Chart.js pelo pacote público oficial do npm;
-- `localStorage` para persistência;
-- hospedagem estática, sem backend próprio obrigatório.
+- HTML semântico e CSS responsivo;
+- Chart.js para o dashboard legado de vendas de pets;
+- `localStorage` com leitura defensiva;
+- roteador client-side próprio;
+- adaptadores para dados legados;
+- métricas fornecidas por módulo;
+- API DofusDude usada somente como catálogo estrutural de crafts e recursos.
+
+Não há backend próprio, banco de dados ou autenticação nesta versão.
 
 ## Requisitos
 
 - Node.js 20.19 ou superior;
-- npm 10 ou superior recomendado;
-- navegador moderno com JavaScript habilitado.
+- npm;
+- navegador moderno.
 
-O `.npmrc` força o registro público:
+## Instalação
+
+```bash
+npm install
+```
+
+O projeto inclui `.npmrc` configurado para:
 
 ```text
 registry=https://registry.npmjs.org/
 ```
 
-## Instalação e execução
-
-Dentro da pasta do projeto:
+## Executar em desenvolvimento
 
 ```bash
-npm install
 npm run dev
 ```
 
-O endereço local normalmente será:
+Abra o endereço apresentado pelo Vite, normalmente:
 
 ```text
 http://localhost:5173/
 ```
 
-## Build e preview
+## Build de produção
 
 ```bash
 npm run build
-npm run preview
 ```
 
-O build publicável é gerado em:
+O resultado é gerado em:
 
 ```text
 dist/
 ```
 
-O preview normalmente usa:
+Para testar o build:
 
-```text
-http://localhost:4173/
+```bash
+npm run preview
 ```
 
-## Validação completa
+## Validações
 
 ```bash
 npm run check
 ```
 
-O comando:
+Esse comando valida:
 
-1. regenera o catálogo de criaturas;
-2. valida IDs, tipos, traduções e imagens;
-3. testa cálculos, bônus, recursos e vendas;
-4. testa a integração do catálogo de recursos com uma resposta simulada da API;
-5. compila o site e executa teste de DOM;
-6. procura referências internas, registries privados e arquivos ausentes.
+- catálogo de criaturas;
+- regressões do Up de Pets;
+- bônus de XP e recursos;
+- rotas modulares;
+- custos de crafts;
+- lotes, estoque e venda parcial;
+- adaptação de vendas legadas;
+- agregação global;
+- preservação de foco e cursor nos campos numéricos;
+- arquivos obrigatórios;
+- URLs públicas do `package-lock.json`;
+- build e estrutura do `dist`.
 
-## Bônus de XP
+## Rotas
 
-Cada simulação possui o campo **Bônus de XP** na etapa de níveis. Exemplos:
+| Rota | Função |
+|---|---|
+| `/` | Hub e dashboard global |
+| `/pets` | Painel do módulo legado de Up de Pets |
+| `/pets/simulacoes` | Simulações de pets |
+| `/pets/simulacoes/nova` | Nova simulação |
+| `/pets/simulacoes/:id` | Edição de simulação |
+| `/pets/vendas` | Vendas de pets |
+| `/crafts` | Módulo de Crafts |
+| `/crafts/projetos` | Projetos de produção |
+| `/crafts/projetos/novo` | Novo projeto |
+| `/crafts/projetos/:id` | Edição do projeto |
+| `/crafts/estoque` | Estoque fabricado |
+| `/crafts/vendas` | Vendas de crafts |
+| `/vendas` | Vendas globais |
+| `/estoque` | Itens globais aguardando venda |
+| `/configuracoes` | Preferências |
 
-```text
-0%   = sem bônus
-50%  = cada fonte fornece 1,5 vez a XP normal
-100% = cada fonte fornece o dobro da XP normal
-```
+O `404.html` preserva deep links no GitHub Pages e redireciona o navegador de volta para a rota solicitada.
 
-Fórmula:
+## Persistência e retrocompatibilidade
 
-```text
-XP efetiva por unidade = XP base × (1 + bônus ÷ 100)
-Quantidade necessária = arredondar para cima(XP necessária ÷ XP efetiva por unidade)
-```
-
-O bônus é aplicado a:
-
-- Ração Vitaminada;
-- rações obtidas por Bolsa de Kolifichas;
-- recursos catalogados;
-- recursos personalizados;
-- recursos usados em combinação com ração ou bolsa.
-
-O cálculo é conservador: a quantidade sempre é arredondada para cima.
-
-O bônus é salvo na simulação e também acompanha uma venda originada dela. Simulações antigas recebem `0%` por migração defensiva.
-
-## Métodos de evolução
-
-A calculadora oferece três estratégias:
-
-1. **Ração Vitaminada:** todo o XP é completado com rações compradas no mercado.
-2. **Bolsa de Kolifichas:** calcula rações, Kolifichas, bolsas inteiras e sobras.
-3. **Utilizar Recursos:** soma a XP dos recursos adicionados e completa automaticamente apenas o restante com Ração Vitaminada ou Bolsa de Kolifichas. Se os recursos alcançarem 100% da XP, nenhum complemento é utilizado.
-
-Somente o método explicitamente selecionado entra no custo do UP.
-
-## Quantidade necessária por recurso
-
-Cada linha do editor mostra:
-
-- XP base;
-- XP efetiva após o bônus;
-- quantidade que o usuário planeja usar;
-- quantidade necessária caso aquele recurso fosse usado sozinho;
-- XP total da linha;
-- preço unitário;
-- custo total.
-
-O botão **Usar quantidade** preenche automaticamente a quantidade necessária para alcançar o nível apenas com aquele recurso.
-
-Recursos personalizados também possuem esse cálculo, desde que uma XP unitária maior que zero seja informada.
-
-## Catálogo completo de recursos — DofusDude
-
-Ao abrir o site, o navegador solicita o catálogo em:
+As chaves anteriores não são apagadas nem renomeadas. O Up de Pets continua usando sua persistência original. Crafts utiliza chaves independentes:
 
 ```text
-https://api.dofusdu.de/dofus3/v1/{idioma}/items/resources/all
+d4b_craft_projects_v1
+d4b_craft_batches_v1
+d4b_craft_inventory_v1
+d4b_craft_sales_v1
+d4b_craft_prices_v1
+d4b_global_activities_v1
 ```
 
-Idiomas usados:
+Vendas antigas de pets são convertidas apenas **em memória** por `legacyPetSalesAdapter`. Os registros originais não são modificados.
 
-```text
-pt-BR → pt
-fr-FR → fr
-en-US → en
-es-ES → es
-```
+### Rollback
 
-O catálogo fornece:
+A versão anterior pode ser republicada sem apagar as chaves novas. Ela simplesmente não as utiliza. Antes de uma atualização em produção, recomenda-se manter uma cópia do repositório ou uma tag Git.
 
-- ID Ankama;
-- nome localizado;
-- nível do recurso;
-- imagem, quando disponível.
+## Correção do cursor nos campos numéricos
 
-O retorno fica em cache por sete dias para evitar downloads repetidos. O ID interno permanece ligado ao ID Ankama, permitindo trocar o idioma sem perder o recurso selecionado.
+Campos que alimentam cálculos em tempo real não provocam mais uma reconstrução completa da tela a cada caractere. Durante o evento `input`, o estado é atualizado sem `render()` integral. Quando uma renderização externa for inevitável, o sistema captura e restaura:
 
-### Limitação importante da API
+- elemento ativo;
+- posição inicial do cursor;
+- posição final da seleção;
+- rolagem horizontal do campo.
 
-A API de recursos fornece o catálogo dos itens, mas não informa a XP específica que cada item concede ao alimentar um mascote. Por isso:
+Isso foi aplicado aos campos de pets, recursos, projetos de craft, ingredientes, estoque e modais de venda.
 
-- recursos já presentes no guia incorporado recebem XP automaticamente;
-- recursos sem XP confirmada continuam selecionáveis;
-- nesses casos, a interface pede que o usuário informe a XP observada no jogo ou confirmada em uma fonte confiável;
-- uma linha sem XP não entra no custo nem na XP até que o valor seja informado.
+## DofusDude
 
-Se a API estiver indisponível, o site utiliza automaticamente o catálogo reduzido incorporado em:
+O módulo de Crafts consulta o catálogo estrutural em tempo de uso para pesquisar itens, obter `ankama_id`, nomes, imagens, níveis, tipos e receitas. Preços, projetos, estoque, lotes e vendas permanecem locais.
 
-```text
-src/data/feedingResources.js
-```
+A indisponibilidade da API não impede a abertura do Up de Pets nem dos históricos já salvos. Vendas históricas utilizam snapshots e não dependem da API para serem reconstruídas.
 
-Serviço de integração:
+## GitHub Pages e domínio próprio
 
-```text
-src/services/resourceCatalogService.js
-```
+O projeto contém:
 
-## Catálogo de criaturas
+- `public/CNAME` para `dofus4business.com.br`;
+- workflow em `.github/workflows/deploy-pages.yml`;
+- `404.html` preparado para rotas da SPA;
+- caminhos relativos de assets.
 
-A fonte principal é:
-
-```text
-src/data/catalog-source.tsv
-```
-
-Ela contém tipo, nomes em português, francês, inglês e espanhol, além da URL de imagem. Para regenerar:
+Fluxo de publicação:
 
 ```bash
-npm run generate:catalog
-npm run validate:catalog
+npm install
+npm run check
+npm run build
+git add .
+git commit -m "Dofus4Business v3.0.0"
+git push
 ```
 
-A troca de idioma altera o nome exibido sem mudar o ID interno da criatura.
+## Google AdSense
 
-## Simulações
-
-O fluxo possui cinco etapas:
-
-1. escolha da criatura;
-2. níveis, XP atual e bônus;
-3. método de evolução e recursos;
-4. custos e venda estimada;
-5. revisão e salvamento.
-
-Novas simulações começam com nível de destino 100. Simulações antigas, editadas e duplicadas mantêm seus valores.
-
-Os cards exibem diretamente:
-
-- editar;
-- duplicar;
-- registrar venda;
-- ver detalhes;
-- excluir.
-
-Quando houver bônus, ele aparece no card e nos detalhes.
-
-## Vendas
-
-Uma venda é criada a partir de uma simulação salva. O modal permite confirmar:
-
-- custo real da criatura;
-- custo real do UP;
-- preço vendido;
-- canal;
-- data e hora.
-
-A integração existente está em:
-
-```text
-src/config/salesApi.js
-src/services/salesService.js
-```
-
-O envio é assíncrono e não bloqueia a navegação. URL, chave e payload não são exibidos ao jogador nem registrados no console.
-
-A exclusão remove apenas o histórico local deste navegador. Não existe API de exclusão remota.
-
-## Painel gerencial
-
-O painel usa exclusivamente vendas registradas. Inclui filtros, KPIs e gráficos de:
-
-- receita, custo e lucro;
-- quantidade de vendas;
-- Mascote x Montascote;
-- canais de venda;
-- criaturas mais lucrativas;
-- retorno sobre investimento;
-- métodos de evolução;
-- distribuição de resultados;
-- melhores períodos.
-
-## Idiomas
-
-Idiomas disponíveis:
-
-- português do Brasil;
-- francês;
-- inglês;
-- espanhol.
-
-Traduções ficam em:
-
-```text
-src/i18n/translations.js
-```
-
-A lista de criaturas e o catálogo remoto de recursos acompanham o idioma ativo.
-
-## Consentimento e privacidade
-
-Na primeira visita, o site apresenta preferências por categoria:
-
-- Essenciais;
-- Preferências;
-- Análise;
-- Publicidade.
-
-Análise e publicidade começam desativadas. Nenhum provedor de análise ou publicidade é carregado nesta versão.
-
-A decisão pode ser alterada pelo rodapé. O estado é salvo em:
-
-```text
-d4b_consent_v2
-```
-
-Quando o Google AdSense for ativado para usuários de regiões que exigem uma plataforma de consentimento certificada, a implementação deverá ser conectada a uma CMP certificada ou ao recurso apropriado do Google Privacy & Messaging.
-
-## Locais preparados para Google AdSense
-
-Os quatro espaços permanecem reservados no desenvolvimento e no build:
+Os quatro locais continuam identificados:
 
 ```text
 ad-slot-header
@@ -307,57 +225,31 @@ ad-slot-middle
 ad-slot-footer
 ```
 
-Configuração central:
+Enquanto `ADS_ENABLED` estiver como `false`, aparecem placeholders discretos. O código real do AdSense deve ser carregado apenas após o consentimento aplicável. Não confunda placeholders com anúncios reais.
 
-```javascript
-export const ADS_ENABLED = false;
+## Versionamento
+
+- **PATCH:** correção de bug compatível;
+- **MINOR:** nova funcionalidade compatível;
+- **MAJOR:** alteração estrutural ou incompatível.
+
+A versão central está em:
+
+```js
+export const APP_VERSION = "3.0.0";
 ```
-
-Enquanto estiver `false`, é mostrado apenas o placeholder de publicidade. Para integrar AdSense:
-
-1. mantenha os IDs;
-2. conecte o script no ponto preparado em `src/services/consentService.js`;
-3. utilize os contêineres criados por `src/components/common.js`;
-4. altere `ADS_ENABLED` apenas após configurar a conta;
-5. não carregue publicidade antes da autorização aplicável.
-
-## Apoio por PIX
-
-Chave configurada:
-
-```text
-Apoie@dofus4business.com.br
-```
-
-A cópia usa Clipboard API com fallback nativo.
-
-## Persistência e migração
-
-Chaves principais:
-
-```text
-d4b_language_v2
-d4b_simulations_v2
-d4b_sales_v2
-d4b_preferences_v2
-- `d4b_resource_xp_memory_v1`: XP confirmada pelo usuário para cada recurso já utilizado.
-d4b_consent_v2
-```
-
-A leitura é defensiva. Dados antigos são migrados sem apagar automaticamente simulações, vendas, idioma ou consentimento válido.
 
 ## Estrutura resumida
 
 ```text
 dofus4business/
-├── .github/workflows/deploy-pages.yml
-├── .npmrc
+├── ARCHITECTURE.md
 ├── CHANGELOG.md
 ├── README.md
 ├── TEST_REPORT.md
-├── index.html
 ├── package.json
 ├── package-lock.json
+├── vite.config.js
 ├── public/
 ├── scripts/
 └── src/
@@ -365,87 +257,13 @@ dofus4business/
     ├── config/
     ├── data/
     ├── i18n/
+    ├── modules/
+    │   ├── crafts/
+    │   ├── global/
+    │   └── pets/
+    ├── router/
     ├── services/
     ├── state/
     ├── styles/
     └── utils/
 ```
-
-## Publicação no GitHub Pages
-
-O projeto inclui:
-
-```text
-.github/workflows/deploy-pages.yml
-public/CNAME
-```
-
-Domínio configurado:
-
-```text
-dofus4business.com.br
-```
-
-Procedimento:
-
-1. envie o projeto para o GitHub;
-2. abra **Settings → Pages**;
-3. escolha publicação por GitHub Actions;
-4. confirme o domínio personalizado;
-5. mantenha os registros DNS do domínio apontados ao GitHub Pages;
-6. aguarde a emissão do HTTPS.
-
-O Vite usa caminhos relativos, permitindo publicação em domínio próprio ou caminho de projeto.
-
-## Publicação em outras hospedagens
-
-Após:
-
-```bash
-npm run build
-```
-
-publique todo o conteúdo de `dist/` em Netlify, Vercel, Cloudflare Pages, Hostinger, Firebase Hosting, Apache, Nginx ou outro servidor estático.
-
-## Atualização da versão
-
-A versão central fica em:
-
-```text
-src/config/app.js
-```
-
-Use versionamento semântico:
-
-- PATCH: correções de bugs;
-- MINOR: funcionalidades compatíveis;
-- MAJOR: alterações incompatíveis.
-
-Também atualize `package.json`, gere novamente o `package-lock.json` e registre a alteração no `CHANGELOG.md`.
-
-## Solução de problemas
-
-### npm tentando usar registro incorreto
-
-```bash
-npm config set registry https://registry.npmjs.org/ --location=project
-npm install
-```
-
-### Catálogo completo de recursos não carregou
-
-- verifique a conexão do navegador;
-- confirme se `https://api.dofusdu.de` está acessível;
-- use o botão de tentar novamente;
-- o catálogo incorporado continuará disponível como fallback.
-
-### Recurso aparece sem XP
-
-Isso significa que o item existe no catálogo do jogo, mas a XP de alimentação não está confirmada no catálogo local. Informe a XP unitária antes de calcular a quantidade e o custo.
-
-### Build antigo no GitHub Pages
-
-- confirme a execução do workflow;
-- limpe o cache do navegador;
-- verifique se `dist/` foi gerada com a versão atual;
-- confirme que o `CNAME` está presente no artefato publicado.

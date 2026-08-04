@@ -1,0 +1,22 @@
+import { getCraftModuleMetrics } from '../adapters/craftMetricsProvider.js';
+import { calculateCraftProject } from '../utils/craftCalculations.js';
+import { formatCompactKamas, formatKamas, formatNumber } from '../../../utils/currency.js';
+import { escapeHtml, icon, imageTag, t } from '../../../components/common.js';
+import { renderBreadcrumbs } from '../../../components/breadcrumbs.js';
+
+const statusLabel=(state,status)=>t(state,`v3.crafts.status.${status}`);
+
+function projectCard(state, project) {
+  const calc=calculateCraftProject(project);
+  return `<article class="card craft-project-card">${imageTag(project.itemImageSnapshot,project.itemNameSnapshot,'craft-project-image')}<div class="craft-project-content"><div class="card-title-line"><span class="status-chip status-${escapeHtml(project.status)}">${escapeHtml(statusLabel(state,project.status))}</span><small>${formatNumber(project.desiredQuantity)} ×</small></div><h3>${escapeHtml(project.itemNameSnapshot)}</h3><div class="craft-project-metrics"><div><span>${escapeHtml(t(state,'v3.metrics.invested'))}</span><strong>${formatCompactKamas(calc.financialCost)}</strong></div><div><span>${escapeHtml(t(state,'v3.metrics.potentialProfit'))}</span><strong class="${calc.potentialProfitEconomic<0?'negative':'positive'}">${formatCompactKamas(calc.potentialProfitEconomic)}</strong></div></div><div class="card-actions"><button class="button secondary compact" data-action="edit-craft-project" data-id="${escapeHtml(project.id)}">${escapeHtml(t(state,'common.edit'))}</button><button class="button ghost compact" data-action="craft-project-details" data-id="${escapeHtml(project.id)}">${escapeHtml(t(state,'common.details'))}</button>${!['finalized','cancelled'].includes(project.status)?`<button class="button primary compact" data-action="complete-craft-project" data-id="${escapeHtml(project.id)}">${escapeHtml(t(state,'v3.crafts.completeProduction'))}</button>`:''}</div></div></article>`;
+}
+
+export function renderCraftsHome(state) {
+  const metrics=getCraftModuleMetrics(state);
+  const projects=[...state.craftProjects].sort((a,b)=>new Date(b.updatedAt)-new Date(a.updatedAt));
+  return `<section class="stack">${renderBreadcrumbs(state,[{label:t(state,'v3.modules.crafts.title')}])}<section class="card module-page-hero crafts-hero"><div><span class="eyebrow">${escapeHtml(t(state,'v3.modules.crafts.short'))}</span><h1>${escapeHtml(t(state,'v3.modules.crafts.title'))}</h1><p>${escapeHtml(t(state,'v3.modules.crafts.description'))}</p><div class="hero-actions"><button class="button primary" data-action="new-craft-project">${icon('plus',17)} ${escapeHtml(t(state,'v3.crafts.newProject'))}</button><button class="button secondary" data-action="route" data-route="craft-inventory">${icon('box',17)} ${escapeHtml(t(state,'v3.inventory.title'))}</button></div></div><span class="module-illustration">${icon('craft',58)}</span></section>
+  <div class="global-kpi-grid compact-grid"><article class="card kpi"><span>${escapeHtml(t(state,'v3.metrics.activeProjects'))}</span><strong>${formatNumber(metrics.activeProjects)}</strong></article><article class="card kpi"><span>${escapeHtml(t(state,'v3.metrics.inventoryValue'))}</span><strong>${formatCompactKamas(metrics.inventoryValue)}</strong></article><article class="card kpi"><span>${escapeHtml(t(state,'v3.metrics.awaitingSale'))}</span><strong>${formatCompactKamas(metrics.awaitingSaleValue)}</strong></article><article class="card kpi"><span>${escapeHtml(t(state,'v3.metrics.realizedProfit'))}</span><strong class="${metrics.realizedProfit<0?'negative':'positive'}">${formatCompactKamas(metrics.realizedProfit)}</strong></article></div>
+  <div class="section-head"><div><span class="eyebrow">${escapeHtml(t(state,'v3.crafts.projects'))}</span><h2>${escapeHtml(t(state,'v3.crafts.projects'))}</h2></div><button class="button primary compact" data-action="new-craft-project">${icon('plus',16)} ${escapeHtml(t(state,'v3.crafts.newProject'))}</button></div>
+  ${projects.length?`<div class="craft-project-grid">${projects.map(project=>projectCard(state,project)).join('')}</div>`:`<div class="card empty module-empty"><span class="empty-icon">${icon('craft',42)}</span><h3>${escapeHtml(t(state,'v3.crafts.emptyTitle'))}</h3><p>${escapeHtml(t(state,'v3.crafts.emptyText'))}</p><button class="button primary" data-action="new-craft-project">${escapeHtml(t(state,'v3.crafts.firstProject'))}</button></div>`}
+  </section>`;
+}

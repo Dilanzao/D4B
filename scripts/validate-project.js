@@ -5,7 +5,7 @@ import { APP_VERSION, ADS_ENABLED, CONSENT_POLICY_VERSION } from '../src/config/
 import { creatureCatalog } from '../src/data/creatures.js';
 
 const root=resolve(import.meta.dirname,'..');
-const required=['package.json','package-lock.json','.npmrc','.gitignore','README.md','CHANGELOG.md','index.html','public/CNAME','public/favicon.svg','public/favicon.ico','public/apple-touch-icon.png','public/assets/brand/logo.png','public/assets/brand/logo.webp','public/assets/brand/logo-header.webp','src/main.js','src/data/catalog-source.tsv','src/services/resourceCatalogService.js'];
+const required=['ARCHITECTURE.md','package.json','package-lock.json','.npmrc','.gitignore','README.md','CHANGELOG.md','index.html','public/CNAME','public/favicon.svg','public/favicon.ico','public/apple-touch-icon.png','public/assets/brand/logo.png','public/assets/brand/logo.webp','public/assets/brand/logo-header.webp','src/main.js','src/data/catalog-source.tsv','src/services/resourceCatalogService.js'];
 const forbidden=['openai'+'.org','applied-'+'caas','internal'+'.api','file'+ '://','/mnt/'+'data/','sandbox'+':/'];
 const textExtensions=new Set(['.js','.json','.md','.html','.css','.txt','.tsv','.yml','.yaml','.xml','.svg','.npmrc']);
 async function walk(dir){const files=[];for(const entry of await readdir(dir)){if(['node_modules','dist','.git'].includes(entry))continue;const path=resolve(dir,entry);const info=await stat(path);files.push(...(info.isDirectory()?await walk(path):[path]));}return files;}
@@ -16,7 +16,7 @@ const lock=JSON.parse(await readFile(resolve(root,'package-lock.json'),'utf8'));
 const pkg=JSON.parse(await readFile(resolve(root,'package.json'),'utf8'));if(pkg.version!==APP_VERSION)throw new Error('package.json version mismatch.');
 const html=await readFile(resolve(root,'index.html'),'utf8');if(!html.includes('Dofus4Business v__APP_VERSION__'))throw new Error('Version title placeholder missing.');
 const scenario=calculateSaleProfit({originCost:838000,upCost:912000,salePrice:1850000,saleChannel:'Mercado HDV'});if(scenario.fee!==37000||scenario.profit!==63000)throw new Error('Integration calculation scenario failed.');
-if(APP_VERSION!=='2.3.1')throw new Error('Unexpected app version.');
+if(APP_VERSION!=='3.0.0')throw new Error('Unexpected app version.');
 if(CONSENT_POLICY_VERSION!=='1.1')throw new Error('Consent policy version mismatch.');
 if(ADS_ENABLED!==false)throw new Error('Ads must remain disabled until real ad code is configured.');
 if(creatureCatalog.length<100)throw new Error('Attached creature catalog was not fully imported.');
@@ -29,6 +29,13 @@ if(!resourceService.includes('limit = Infinity'))throw new Error('Resource catal
 const stepper=await readFile(resolve(root,'src/components/simulationStepper.js'),'utf8');if((stepper.match(/data-resource-picker-search/g)||[]).length!==1)throw new Error('Resource selector must use one unified search/listbox.');if(stepper.includes('.slice(0, 18)'))throw new Error('Creature selector still truncates unfiltered results.');if(!stepper.includes('select-custom-resource'))throw new Error('Custom resource option is missing from the unified listbox.');
 const xpMemory=await readFile(resolve(root,'src/services/resourceXpMemoryService.js'),'utf8');if(!xpMemory.includes('d4b_resource_xp_memory_v1'))throw new Error('Resource XP memory service missing.');
 if(!main.includes('captureFocusSnapshot')||!main.includes('restoreFocusSnapshot'))throw new Error('Focus preservation during live recalculation is missing.');
+
+const router=await readFile(resolve(root,'src/router/router.js'),'utf8');for(const route of ['/pets','/pets/simulacoes','/crafts','/crafts/projetos','/crafts/estoque','/vendas','/estoque'])if(!router.includes(route))throw new Error(`Module route missing: ${route}`);
+for(const file of ['src/modules/pets/legacyPetSalesAdapter.js','src/modules/pets/petMetricsProvider.js','src/modules/crafts/services/craftStorageService.js','src/modules/crafts/services/dofusDudeCraftService.js','src/modules/global/globalDashboardAggregator.js'])await stat(resolve(root,file));
+const craftService=await readFile(resolve(root,'src/modules/crafts/services/dofusDudeCraftService.js'),'utf8');if(!craftService.includes('fields[item]=recipe'))throw new Error('Craft recipe integration missing.');
+const craftCalc=await readFile(resolve(root,'src/modules/crafts/utils/craftCalculations.js'),'utf8');for(const token of ['financialCost','economicCost','accountingCost','calculateCraftSale','mergeInventory'])if(!craftCalc.includes(token))throw new Error(`Craft calculation missing: ${token}`);
+if(!main.includes("updateEditorField(field,event.target.value,false)")||!main.includes("updateCraftField(craftField,event.target.value,false)"))throw new Error('Numeric input handlers may still replace the active field on every character.');
+
 const gallery=await readFile(resolve(root,'src/components/simulationGallery.js'),'utf8');if(gallery.includes('simulation-options'))throw new Error('Simulation card still depends on More options.');
 const modals=await readFile(resolve(root,'src/components/modals.js'),'utf8');if(!modals.includes("type==='information'"))throw new Error('Unified information panel missing.');
 const dashboard=await readFile(resolve(root,'src/components/dashboard.js'),'utf8');for(const id of ['chart-financial','chart-sales-count','chart-types','chart-channels','chart-top-creatures','chart-roi','chart-methods','chart-distribution'])if(!dashboard.includes(id))throw new Error(`Dashboard chart missing: ${id}`);

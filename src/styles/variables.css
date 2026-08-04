@@ -4,5 +4,8 @@
  --gold:#a8782b;--gold-dark:#78531c;--gold-light:#f0dfbe;--blue:#3d8399;--green:#337a49;--red:#b5443d;
  --shadow:0 10px 32px rgba(69,50,22,.08);--shadow-lg:0 24px 70px rgba(50,37,18,.18);
  --radius:22px;--radius-sm:13px;--header-height:74px;--max:1500px;
- --focus:0 0 0 4px rgba(61,131,153,.2)
+ --focus:0 0 0 4px rgba(61,131,153,.2);
+ --border:var(--line);--border-soft:#f0e8da;--danger:var(--red);--text-soft:var(--soft);
+ --sand-50:#fbf8f1;--sand-100:#f4ead7;--sky-50:#edf7fa;--sky-700:#28677b;
+ --leaf-50:#edf7ed;--leaf-700:#2d6f42;--warning-soft:#fff6df;--warning-dark:#7d5b12
 }

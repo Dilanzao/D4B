@@ -68,3 +68,18 @@
   .recipe-planner-modal{padding:16px}.recipe-planner-hero{grid-template-columns:58px minmax(0,1fr);padding:12px}.recipe-planner-hero .selected-item-image{width:58px;height:58px}
   .recipe-breadcrumbs{margin-inline:-4px}.method-card-shell>.method-card{padding-top:44px}
 }
+
+
+@media (max-width:980px){
+  .account-page-grid,.account-settings-grid{grid-template-columns:1fr}
+  .account-help{order:2}
+  .header-actions .account-chip{min-width:44px;padding:8px}.header-actions .account-chip span{display:none}
+}
+@media (max-width:640px){
+  .account-card,.account-help{padding:18px}
+  .account-links{flex-direction:column}
+  .community-price-box{align-items:flex-start;flex-direction:column}
+  .community-price-actions{width:100%;justify-content:flex-start}
+  .craft-server-context{align-items:flex-start;flex-wrap:wrap}.craft-server-context .button{width:100%;justify-content:center}
+  .account-session-actions{flex-direction:column}.account-session-actions .button{width:100%;justify-content:center}
+}

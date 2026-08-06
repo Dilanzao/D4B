@@ -2,9 +2,9 @@ import { inventorySnapshotFor } from './craftRecipeTree.js';
 
 const integer = value => Math.max(0, Math.round(Number(value) || 0));
 
-function calculateIngredient(ingredient, multiplier = 1, inventory = [], ancestry = []) {
+function calculateIngredient(ingredient, multiplier = 1, inventory = [], ancestry = [], serverId = '') {
   const required = Math.max(1, integer(ingredient.quantityPerUnit || ingredient.totalQuantity || 1)) * Math.max(1, integer(multiplier || 1));
-  const stock = inventorySnapshotFor(ingredient, inventory);
+  const stock = inventorySnapshotFor(ingredient, inventory, serverId);
   const requestedStock = Math.min(required, integer(ingredient.useStockQuantity));
   const stockUsed = Math.min(requestedStock, stock.stockAvailable);
   const remaining = Math.max(0, required - stockUsed);
@@ -21,7 +21,7 @@ function calculateIngredient(ingredient, multiplier = 1, inventory = [], ancestr
       missing.push({ id: ingredient.id, name: ingredient.nameSnapshot, reason: 'cycle' });
     } else if (Array.isArray(ingredient.subRecipe) && ingredient.subRecipe.length) {
       const nextAncestry = [...ancestry, ingredient.ankamaId].filter(value => value != null);
-      subCosts = ingredient.subRecipe.map(line => calculateIngredient(line, remaining, inventory, nextAncestry));
+      subCosts = ingredient.subRecipe.map(line => calculateIngredient(line, remaining, inventory, nextAncestry, serverId));
       operationCost = subCosts.reduce((sum, row) => sum + row.cost, 0);
       missing = subCosts.flatMap(row => row.missing);
     } else {
@@ -56,13 +56,13 @@ function calculateIngredient(ingredient, multiplier = 1, inventory = [], ancestr
   };
 }
 
-export function ingredientCost(ingredient, multiplier = 1, inventory = []) {
-  return calculateIngredient(ingredient, multiplier, inventory);
+export function ingredientCost(ingredient, multiplier = 1, inventory = [], serverId = '') {
+  return calculateIngredient(ingredient, multiplier, inventory, [], serverId);
 }
 
 export function calculateCraftProject(project, inventory = []) {
   const quantity = Math.max(1, integer(project.desiredQuantity || 1));
-  const ingredients = (project.ingredients || []).map(line => calculateIngredient(line, quantity, inventory, []));
+  const ingredients = (project.ingredients || []).map(line => calculateIngredient(line, quantity, inventory, [], project.serverId || ''));
   const ingredientCostTotal = ingredients.reduce((sum, line) => sum + line.cost, 0);
   const additionalCosts = integer(project.additionalCosts);
   const totalCost = ingredientCostTotal + additionalCosts;
@@ -134,6 +134,8 @@ export function mergeInventory(existing, batch) {
   const quantity = integer(batch.remainingQuantity);
   if (!existing) {
     return {
+      serverId: batch.serverId || '',
+      serverNameSnapshot: batch.serverNameSnapshot || '',
       ankamaId: batch.ankamaId,
       itemNameSnapshot: batch.itemNameSnapshot,
       itemImageSnapshot: batch.itemImageSnapshot,

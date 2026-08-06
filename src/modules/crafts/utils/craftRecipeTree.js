@@ -23,8 +23,10 @@ export function collectAncestorAnkamaIds(lines = [], targetId, ancestors = []) {
   return null;
 }
 
-export function inventorySnapshotFor(ingredient, inventory = []) {
-  const item = inventory.find(row => ingredient.ankamaId != null && String(row.ankamaId) === String(ingredient.ankamaId));
+export function inventorySnapshotFor(ingredient, inventory = [], serverId = '') {
+  const item = inventory.find(row => ingredient.ankamaId != null
+    && String(row.ankamaId) === String(ingredient.ankamaId)
+    && (!serverId || String(row.serverId || '') === String(serverId)));
   return {
     inventoryItemId: item?.id || null,
     stockAvailable: Math.max(0, Number(item?.availableQuantity ?? item?.quantity ?? 0) || 0),

@@ -1,58 +1,41 @@
-# Relatório de validação — Dofus4Business v3.0.3
+# Relatório de testes — Dofus4Business v3.1.0
 
-Data da validação: 04/08/2026.
+Data: 5 de agosto de 2026
 
-## Escopo validado
+## Resultado
 
-- preservação dos cálculos e dados do módulo Up de Pets;
-- planejador modal de receitas recursivas;
-- navegação por breadcrumb entre níveis de sub-receita;
-- ausência de indentação horizontal progressiva;
-- profissão somente em itens fabricáveis;
-- comparação entre comprar o componente pronto e fabricá-lo;
-- preço de mercado editável mesmo com a estratégia Fabricar;
-- cópia de nomes pelo ícone no idioma exibido;
-- preservação de foco e cursor nos campos numéricos;
-- catálogo multilíngue de criaturas e recursos;
-- build estático e validação estrutural.
+`npm run check`: **aprovado**.
 
-## Comandos executados
+## Validações executadas
 
-```bash
-find src scripts -name '*.js' -print0 | xargs -0 -n1 node --check
-npm run check
-npm run build
-```
-
-Também foi servido o conteúdo de `dist/` com um servidor HTTP local. A página inicial respondeu com status HTTP 200.
-
-## Resultados
-
-- 147 criaturas geradas e validadas;
+- catálogo com 147 criaturas;
 - 122 mascotes renderizados sem truncamento;
-- 125 recursos de teste renderizados sem truncamento;
-- smoke tests aprovados;
-- testes de interface aprovados;
-- teste de DOM/build aprovado;
-- validação estrutural aprovada;
-- teste do planejador modal aprovado;
-- teste da ação de copiar nomes aprovado;
-- teste de preservação de cursor aprovado;
-- nenhuma URL privada encontrada no `package-lock.json`;
-- todos os campos `resolved` do lock apontam para `https://registry.npmjs.org/`.
+- 125 recursos renderizados sem truncamento;
+- regressão dos cálculos do Up de Pets;
+- cálculo de bônus de XP e quantidades;
+- cálculo de venda legada com lucro esperado;
+- pesquisa de crafts sem categoria Recurso;
+- hidratação de nome e imagem dos ingredientes;
+- receitas recursivas;
+- uso e consumo de estoque;
+- venda parcial de crafts;
+- rotas antigas e novas;
+- rotas de contas;
+- preços comunitários recursivos;
+- preservação de preço digitado manualmente;
+- identificação de preço desatualizado;
+- envio pendente de preços;
+- snapshot de servidor;
+- preservação do foco e do cursor;
+- preservação da rolagem da sub-receita;
+- validação do arquivo de configuração em tempo de execução;
+- ausência de registries privados no `package-lock.json`;
+- validação estrutural do projeto;
+- build estático de contingência;
+- teste do conteúdo de `dist`.
 
-## Instalação npm no ambiente de geração
+## Observações
 
-O ambiente de geração força por variável de ambiente um registry interno sobre o `.npmrc` do projeto. Por isso, a execução de `npm ci` neste ambiente tentou acessar esse registry e não pôde ser usada como prova de instalação pública.
+A URL real da implantação do Google Apps Script não foi fornecida durante a geração. Por esse motivo, a integração foi validada contra o contrato do `Code.gs`, por testes de fonte e serviços, mas não foi realizado login contra a implantação real.
 
-O arquivo entregue contém:
-
-```text
-registry=https://registry.npmjs.org/
-```
-
-O `package-lock.json` foi validado e possui somente URLs públicas do npm. A instalação deve ser executada normalmente no computador do usuário com `npm install` ou `npm ci`.
-
-## Observações não bloqueantes
-
-O validador do catálogo encontrou cinco pares de criaturas que compartilham imagens. Esses avisos já existiam na base e não impedem o funcionamento do site.
+O ambiente de geração não conseguiu instalar o Vite pelo registro público. O script de build acionou corretamente o build estático de contingência. Em uma máquina com acesso normal ao npm, `npm install` permite o build padrão com Vite.

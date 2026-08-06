@@ -1,5 +1,23 @@
 # Changelog
 
+## 3.1.0 — 2026-08-05
+
+- Adicionado sistema completo de contas integrado ao Google Apps Script.
+- Adicionadas rotas de login, cadastro, confirmação de e-mail, recuperação e redefinição de senha.
+- Adicionada opção para manter o usuário conectado.
+- Adicionado indicador de conta e servidor no cabeçalho de todo o site.
+- Adicionadas Configurações de conta com troca de servidor, preferência de preços e troca de senha.
+- Adicionados preços comunitários e próprios por servidor.
+- Adicionados alertas para preços com mais de 3 e 7 dias.
+- Adicionado envio em lote de preços de receitas e sub-receitas.
+- Projetos, lotes, estoque e vendas de crafts passam a guardar snapshot do servidor.
+- Adicionado botão Registrar venda diretamente nos cards de projetos finalizados.
+- Corrigida a exclusão permanente de projetos sem apagar o histórico de lotes e vendas.
+- Corrigida a recuperação de itens do estoque por servidor.
+- Corrigida a perda da posição de rolagem em modais de sub-receitas.
+- Mantida a preservação do foco e do cursor em campos numéricos.
+- Adicionado `public/runtime-config.js` para configurar a URL da API sem alterar o código.
+
 ## 3.0.3
 
 - Sub-receitas movidas para um planejador modal com navegação por níveis e breadcrumb.

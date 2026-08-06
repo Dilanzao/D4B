@@ -8,7 +8,7 @@ import { calculateCraftProject, calculateCraftSale } from '../modules/crafts/uti
 import { renderCraftRecipePlanner } from '../modules/crafts/components/craftRecipePlanner.js';
 
 function modalShell(state,title,body,actions='',wide=false,extraClass='') {
-  return `<div class="modal-backdrop" role="presentation"><section class="modal ${wide?'wide':''} ${extraClass}" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="modal-head"><h2 id="modal-title">${escapeHtml(title)}</h2><button class="icon-button" data-action="close-modal" aria-label="${escapeHtml(t(state,'common.close'))}">${icon('close')}</button></div>${body}${actions?`<div class="modal-actions">${actions}</div>`:''}</section></div>`;
+  return `<div class="modal-backdrop" role="presentation"><section class="modal ${wide?'wide':''} ${extraClass}" data-scroll-key="active-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="modal-head"><h2 id="modal-title">${escapeHtml(title)}</h2><button class="icon-button" data-action="close-modal" aria-label="${escapeHtml(t(state,'common.close'))}">${icon('close')}</button></div>${body}${actions?`<div class="modal-actions">${actions}</div>`:''}</section></div>`;
 }
 
 function infoModal(state,m) {

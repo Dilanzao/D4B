@@ -3,10 +3,13 @@ import { applyConsent, preferenceStorageAllowed } from '../services/consentServi
 import { getEmbeddedResourceCatalog } from '../services/resourceCatalogService.js';
 import { craftStorage, loadCraftData } from '../modules/crafts/services/craftStorageService.js';
 import { STORAGE_SCHEMA_VERSION } from '../config/app.js';
+import { loadAccountSession } from '../services/accountSessionService.js';
+import { isAccountApiConfigured } from '../config/accountApi.js';
 
 const initial = loadApplicationData();
 const craftInitial = loadCraftData();
 craftStorage.saveSchema(STORAGE_SCHEMA_VERSION);
+const accountInitial = loadAccountSession();
 const listeners = new Set();
 
 export const state = {
@@ -40,7 +43,30 @@ export const state = {
   craftPrices: craftInitial.prices,
   activities: craftInitial.activities,
   craftSearch: { query: '', status: 'idle', results: [], error: null },
-  craftProjectFilters: { status: 'all', search: '' }
+  craftProjectFilters: { status: 'all', search: '' },
+  account: {
+    status: accountInitial?.sessionToken ? 'restoring' : 'anonymous',
+    sessionToken: accountInitial?.sessionToken || '',
+    expiresAt: accountInitial?.expiresAt || null,
+    rememberConnected: Boolean(accountInitial?.rememberConnected),
+    user: accountInitial?.user || null,
+    selectedServer: null,
+    apiConfigured: isAccountApiConfigured()
+  },
+  accountUi: {
+    busy: false,
+    login: { email: '', password: '', rememberConnected: false },
+    register: { displayName: '', email: '', serverId: '', password: '', confirmPassword: '' },
+    forgot: { email: '' },
+    reset: { password: '', confirmPassword: '' },
+    settings: null,
+    changePassword: { currentPassword: '', newPassword: '', confirmPassword: '' },
+    verificationStatus: 'idle',
+    verificationMessage: ''
+  },
+  servers: [],
+  communityPrices: {},
+  communityPriceStatus: 'idle'
 };
 
 export function subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); }
@@ -80,3 +106,8 @@ export function showToast(message, tone = 'success') {
     if (state.toast?.message === message) { state.toast = null; emit(); }
   }, 2800);
 }
+
+export function setAccount(patch) { state.account = { ...state.account, ...patch }; emit(); }
+export function setAccountUi(patch) { state.accountUi = { ...state.accountUi, ...patch }; emit(); }
+export function setServers(value) { state.servers = Array.isArray(value) ? value : []; emit(); }
+export function setCommunityPrices(value, status = 'ready') { state.communityPrices = value && typeof value === 'object' ? value : {}; state.communityPriceStatus = status; emit(); }

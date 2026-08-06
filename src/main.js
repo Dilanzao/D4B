@@ -17,6 +17,7 @@ import { renderModal } from './components/modals.js';
 import { renderHomeHub } from './components/homeHub.js';
 import { renderGlobalSales } from './components/globalSales.js';
 import { renderGlobalInventory } from './components/globalInventory.js';
+import { renderLoginPage, renderRegisterPage, renderForgotPasswordPage, renderVerifyEmailPage, renderResetPasswordPage, renderAccountSettingsPage } from './components/accountPages.js';
 import { adSlot, escapeHtml, icon, imageTag, t } from './components/common.js';
 import { renderCraftsHome } from './modules/crafts/components/craftsHome.js';
 import { renderCraftProjectEditor } from './modules/crafts/components/craftProjectEditor.js';
@@ -25,7 +26,8 @@ import { renderCraftSales } from './modules/crafts/components/craftSales.js';
 import {
   state, subscribe, emit, setLanguage, setSimulations, setSales, setConsent, setDashboardFilters,
   setGlobalFilters, setGlobalSalesFilter, setInventoryFilter, setResourceCatalog, setCraftProjects,
-  setCraftBatches, setCraftInventory, setCraftSales, setActivities, openModal, closeModal, showToast
+  setCraftBatches, setCraftInventory, setCraftSales, setActivities, openModal, closeModal, showToast,
+  setAccount, setAccountUi, setServers, setCommunityPrices
 } from './state/store.js';
 import { normalizeSimulation, normalizeSale } from './services/storageService.js';
 import {
@@ -46,6 +48,11 @@ import { includesNormalized } from './utils/textSearch.js';
 import { validateStep } from './utils/validation.js';
 import { installRouter, navigatePath, navigateTo } from './router/router.js';
 import { captureFocusSnapshot, restoreFocusSnapshot } from './utils/focusPreservation.js';
+import { captureScrollSnapshot, restoreScrollSnapshot } from './utils/scrollPreservation.js';
+import { accountApi } from './services/accountApiService.js';
+import { clearAccountSession, saveAccountSession, updateStoredAccountUser } from './services/accountSessionService.js';
+import { isAccountApiConfigured } from './config/accountApi.js';
+import { applyCommunityPrices, collectDirtyIngredientPrices, collectRecipeAnkamaIds, findIngredientRecursive, markIngredientPriceEdited, setPriceSyncStatus } from './services/communityPriceService.js';
 
 const app = document.querySelector('#app');
 const pendingRoute = (() => { try { const value = sessionStorage.getItem('d4b_pending_route'); if (value) sessionStorage.removeItem('d4b_pending_route'); return value; } catch { return null; } })();
@@ -53,6 +60,7 @@ if (pendingRoute && pendingRoute.startsWith('/')) history.replaceState(null, '',
 
 let craftSearchTimer = null;
 let craftSearchController = null;
+let lastRenderedRoutePath = null;
 
 function newSimulation(base = {}) {
   const hasTarget = Object.prototype.hasOwnProperty.call(base, 'targetLevel');
@@ -87,9 +95,12 @@ function openEditor(simulation, mode = 'new', { navigate = true } = {}) {
 }
 
 function newCraftProject(base = {}) {
+  const activeServer = state.account?.selectedServer || (state.servers||[]).find(server=>String(server.id)===String(state.account?.user?.serverId));
   return normalizeCraftProject({
     id: base.id || createId('craft-project'), status: base.status || 'draft', desiredQuantity: base.desiredQuantity || 1,
     ingredients: base.ingredients || [], saleChannel: base.saleChannel || 'HDV', costingMethod: 'simple',
+    serverId: base.serverId || activeServer?.id || state.account?.user?.serverId || '',
+    serverNameSnapshot: base.serverNameSnapshot || activeServer?.name || '',
     createdAt: base.createdAt || nowIso(), updatedAt: nowIso(), ...base
   });
 }
@@ -107,6 +118,7 @@ function openCraftEditor(project, mode = 'new', { navigate = true } = {}) {
   if (navigate) navigateTo(mode === 'edit' ? 'craft-project-edit' : 'craft-project-new', mode === 'edit' ? { id: project.id } : {});
   else emit();
   window.scrollTo({ top: 0, behavior: 'smooth' });
+  if (state.account?.user) queueMicrotask(() => refreshCommunityPrices());
 }
 
 function generateSimulationName(sim) {
@@ -136,6 +148,12 @@ function renderView() {
   if (route === 'global-sales') return renderGlobalSales(state);
   if (route === 'global-inventory') return renderGlobalInventory(state);
   if (route === 'settings') return renderSettingsPage();
+  if (route === 'login') return renderLoginPage(state);
+  if (route === 'register') return renderRegisterPage(state);
+  if (route === 'forgot-password') return renderForgotPasswordPage(state);
+  if (route === 'verify-email') return renderVerifyEmailPage(state);
+  if (route === 'reset-password') return renderResetPasswordPage(state);
+  if (route === 'account-settings') return renderAccountSettingsPage(state);
   return renderHomeHub(state);
 }
 
@@ -146,15 +164,19 @@ function renderCookieBanner() {
 
 function render() {
   const focusSnapshot = captureFocusSnapshot(app);
+  const preserveScroll = lastRenderedRoutePath === state.route?.path;
+  const scrollSnapshot = captureScrollSnapshot(app);
   destroyDashboardCharts();
   document.documentElement.lang = state.language;
   document.title = `Dofus4Business v${APP_VERSION}`;
   const editorRoute = ['pet-simulation-new','pet-simulation-edit','craft-project-new','craft-project-edit'].includes(state.route?.name);
   app.innerHTML = `<div class="app-shell">${renderHeader(state)}<div class="container">${adSlot('ad-slot-header','header-ad',state)}</div><main id="main-content" class="main"><div class="container">${editorRoute?`<div class="page-grid"><div>${renderView()}</div><aside class="sidebar sticky">${adSlot('ad-slot-sidebar','sidebar-ad',state)}<article class="card section"><span class="eyebrow">${escapeHtml(t(state,'support.title'))}</span><p class="muted small" style="margin-top:8px">${escapeHtml(t(state,'support.text'))}</p><button class="button secondary" style="margin-top:12px" data-action="open-support">${icon('pix',17)} ${escapeHtml(t(state,'support.button'))}</button></article></aside></div>`:renderView()}</div></main>${renderFooter(state)}${renderModal(state)}${state.toast?`<div class="toast ${state.toast.tone==='error'?'error':''}" role="status">${escapeHtml(state.toast.message)}</div>`:''}${renderCookieBanner()}</div>`;
+  lastRenderedRoutePath = state.route?.path || null;
   requestAnimationFrame(() => {
     const shouldFocusModal = state.modal && !focusSnapshot?.inModal;
     if (shouldFocusModal) app.querySelector('.modal button,.modal input,.modal select')?.focus();
     else restoreFocusSnapshot(app, focusSnapshot);
+    if (preserveScroll) restoreScrollSnapshot(app, scrollSnapshot);
     mountDashboardCharts(state);
   });
 }
@@ -178,16 +200,206 @@ function hydrateRoute(route) {
     if (currentId !== route.params.id || state.craftEditor?.mode !== 'edit') {
       const project = state.craftProjects.find(item => item.id === route.params.id);
       state.craftEditor = project ? createCraftEditorState(project, 'edit') : null;
+      if (project && state.account?.user) queueMicrotask(() => refreshCommunityPrices());
       if (!project) { showToast(t(state,'common.noResults'),'error'); navigateTo('craft-projects',{}, { replace:true }); return; }
     }
   }
   if (!route.name.startsWith('craft-project-')) state.craftEditor = null;
+  if (route.name === 'verify-email' && state.accountUi.verificationStatus === 'idle') {
+    const token = new URLSearchParams(globalThis.location?.search || '').get('token') || '';
+    state.accountUi.verificationStatus = token ? 'loading' : 'error';
+    state.accountUi.verificationMessage = token ? '' : t(state,'v310.account.verificationFailed');
+    if (token) queueMicrotask(() => verifyEmailToken(token));
+  }
+  if (route.name === 'account-settings' && state.account?.user) {
+    state.accountUi.settings = {
+      displayName: state.account.user.displayName || '',
+      serverId: state.account.user.serverId || '',
+      priceMode: state.account.user.priceMode || 'COMUNIDADE'
+    };
+  }
   emit();
+}
+
+
+function accountErrorMessage(error) {
+  return String(error?.message || t(state,'common.noResults'));
+}
+
+function activeServerFor(user = state.account?.user) {
+  const id = user?.serverId || '';
+  return (state.servers || []).find(server => String(server.id) === String(id)) || null;
+}
+
+function applyAccountUser(user, patch = {}) {
+  const selectedServer = activeServerFor(user);
+  state.account = {
+    ...state.account,
+    ...patch,
+    status: user ? 'authenticated' : 'anonymous',
+    user: user || null,
+    selectedServer
+  };
+  if (user) {
+    state.accountUi.settings = {
+      displayName: user.displayName || '',
+      serverId: user.serverId || '',
+      priceMode: user.priceMode || 'COMUNIDADE'
+    };
+  }
+}
+
+async function loadAccountServers() {
+  if (!isAccountApiConfigured()) return [];
+  try {
+    const data = await accountApi.listarServidores();
+    const servers = Array.isArray(data.servers) ? data.servers : [];
+    state.servers = servers;
+    state.account.selectedServer = activeServerFor();
+    emit();
+    return servers;
+  } catch {
+    return [];
+  }
+}
+
+async function restoreAccountSession() {
+  if (!state.account?.sessionToken || !isAccountApiConfigured()) {
+    state.account.status = 'anonymous';
+    emit();
+    return false;
+  }
+  try {
+    const data = await accountApi.validarSessao(state.account.sessionToken);
+    applyAccountUser(data.user, { expiresAt: data.expiresAt || state.account.expiresAt });
+    saveAccountSession({
+      sessionToken: state.account.sessionToken,
+      expiresAt: data.expiresAt || state.account.expiresAt,
+      rememberConnected: state.account.rememberConnected,
+      user: data.user
+    });
+    emit();
+    return true;
+  } catch {
+    clearAccountSession();
+    applyAccountUser(null, { sessionToken: '', expiresAt: null, rememberConnected: false });
+    emit();
+    return false;
+  }
+}
+
+async function refreshCommunityPrices({ overwriteManual = false } = {}) {
+  const project = state.craftEditor?.project;
+  const token = state.account?.sessionToken;
+  const serverId = project?.serverId || state.account?.user?.serverId;
+  const ankamaIds = collectRecipeAnkamaIds(project?.ingredients || []);
+  if (!project || !token || !serverId || !ankamaIds.length || !isAccountApiConfigured()) return false;
+  state.communityPriceStatus = 'loading';
+  emit();
+  try {
+    const data = await accountApi.consultarPrecosEmLote({
+      sessionToken: token,
+      serverId,
+      priceMode: state.account.user?.priceMode || 'COMUNIDADE',
+      ankamaIds
+    });
+    state.communityPrices = data.prices || {};
+    state.communityPriceStatus = 'ready';
+    applyCommunityPrices(project.ingredients, data.prices || {}, { overwriteManual });
+    emit();
+    return true;
+  } catch (error) {
+    state.communityPriceStatus = 'error';
+    showToast(accountErrorMessage(error),'error');
+    return false;
+  }
+}
+
+function pricePayloadFor(line, project, origin = 'CRAFT') {
+  return {
+    ankamaId: line.ankamaId,
+    itemNameSnapshot: line.nameSnapshot,
+    itemCategory: line.typeSnapshot || '',
+    quantity: 1,
+    totalPrice: Number(line.unitMarketPrice) || 0,
+    origin,
+    projectId: project.id
+  };
+}
+
+async function publishIngredientPrice(line) {
+  const project = state.craftEditor?.project;
+  const token = state.account?.sessionToken;
+  const serverId = project?.serverId || state.account?.user?.serverId;
+  if (!line?.priceDirty || !project || !token || !serverId || Number(line.unitMarketPrice) <= 0 || !isAccountApiConfigured()) return false;
+  setPriceSyncStatus([line],'saving');
+  emit();
+  try {
+    const data = await accountApi.registrarPrecosEmLote({
+      sessionToken: token,
+      serverId,
+      siteVersion: APP_VERSION,
+      prices: [pricePayloadFor(line, project, 'CRAFT')]
+    });
+    setPriceSyncStatus([line],'saved',data.registered || []);
+    emit();
+    return true;
+  } catch (error) {
+    setPriceSyncStatus([line],'error');
+    emit();
+    showToast(accountErrorMessage(error),'error');
+    return false;
+  }
+}
+
+async function flushDirtyIngredientPrices() {
+  const project = state.craftEditor?.project;
+  const lines = collectDirtyIngredientPrices(project?.ingredients || []);
+  const token = state.account?.sessionToken;
+  const serverId = project?.serverId || state.account?.user?.serverId;
+  if (!lines.length || !project || !token || !serverId || !isAccountApiConfigured()) return true;
+  setPriceSyncStatus(lines,'saving');
+  emit();
+  try {
+    const data = await accountApi.registrarPrecosEmLote({
+      sessionToken: token,
+      serverId,
+      siteVersion: APP_VERSION,
+      prices: lines.map(line => pricePayloadFor(line,project,'CRAFT'))
+    });
+    setPriceSyncStatus(lines,'saved',data.registered || []);
+    emit();
+    return true;
+  } catch (error) {
+    setPriceSyncStatus(lines,'error');
+    emit();
+    showToast(accountErrorMessage(error),'error');
+    return false;
+  }
+}
+
+async function verifyEmailToken(token) {
+  try {
+    await accountApi.verificarEmail(token);
+    state.accountUi.verificationStatus = 'success';
+    state.accountUi.verificationMessage = '';
+  } catch (error) {
+    state.accountUi.verificationStatus = 'error';
+    state.accountUi.verificationMessage = accountErrorMessage(error);
+  }
+  emit();
+}
+
+async function initializeAccounts() {
+  state.account.apiConfigured = isAccountApiConfigured();
+  await loadAccountServers();
+  await restoreAccountSession();
 }
 
 applyConsent(state.consent);
 subscribe(render);
 installRouter(hydrateRoute);
+void initializeAccounts();
 
 async function refreshResourceCatalog(language = state.language, force = false) {
   setResourceCatalog({ items: state.resourceCatalog, status: 'loading', source: state.resourceCatalogSource });
@@ -285,8 +497,11 @@ async function selectCraftItem(ankamaId) {
     const detail=await fetchCraftItemDetails(summary,state.language);
     if(!detail.recipe?.length){showToast(t(state,'v3.crafts.noRecipe'),'error');return;}
     const quantity=Math.max(1,editor.project.desiredQuantity||1);
-    editor.project={...editor.project,status:'draft',ankamaId:detail.ankamaId,itemNameSnapshot:detail.name,itemImageSnapshot:detail.imageUrl,itemTypeSnapshot:detail.type,itemLevelSnapshot:detail.level,professionTag:detail.professionTag||'unknown',ingredients:detail.recipe.map(item=>normalizeIngredient({ankamaId:item.ankamaId,nameSnapshot:item.name,imageSnapshot:item.imageUrl,typeSnapshot:item.type,typeNameIdSnapshot:item.typeNameId,professionTag:item.professionTag||'unknown',isCraftable:item.isCraftable,quantityPerUnit:item.quantity,totalQuantity:item.quantity*quantity,unitMarketPrice:state.craftPrices?.[item.ankamaId]||0,acquisitionMode:'buy'})),updatedAt:nowIso()};
+    const activeServer=state.account?.selectedServer||activeServerFor();
+    editor.project={...editor.project,status:'draft',ankamaId:detail.ankamaId,itemNameSnapshot:detail.name,itemImageSnapshot:detail.imageUrl,itemTypeSnapshot:detail.type,itemLevelSnapshot:detail.level,professionTag:detail.professionTag||'unknown',serverId:editor.project.serverId||activeServer?.id||state.account?.user?.serverId||'',serverNameSnapshot:editor.project.serverNameSnapshot||activeServer?.name||'',ingredients:detail.recipe.map(item=>normalizeIngredient({ankamaId:item.ankamaId,nameSnapshot:item.name,imageSnapshot:item.imageUrl,typeSnapshot:item.type,typeNameIdSnapshot:item.typeNameId,professionTag:item.professionTag||'unknown',isCraftable:item.isCraftable,quantityPerUnit:item.quantity,totalQuantity:item.quantity*quantity,unitMarketPrice:state.craftPrices?.[item.ankamaId]||0,acquisitionMode:'buy'})),updatedAt:nowIso()};
+    applyCommunityPrices(editor.project.ingredients,state.communityPrices||{});
     editor.itemQuery=detail.name;emit();
+    void refreshCommunityPrices();
   }catch{showToast(t(state,'v3.crafts.apiUnavailable'),'error');}
 }
 
@@ -308,7 +523,10 @@ async function loadSubrecipe(ingredientId, { openPlanner=false, pushToStack=fals
     if(!line.isCraftable){line.acquisitionMode='buy';line.subRecipe=[];line.subRecipeLoaded=true;line.subRecipeStatus='idle';line.professionTag='unknown';showToast(t(state,'v3.crafts.notCraftable'),'error');emit();return false;}
     line.professionTag=detail.professionTag||line.professionTag||'unknown';
     line.subRecipe=(detail.recipe||[]).map(item=>normalizeIngredient({ankamaId:item.ankamaId,nameSnapshot:item.name,imageSnapshot:item.imageUrl,typeSnapshot:item.type,typeNameIdSnapshot:item.typeNameId,professionTag:item.isCraftable?(item.professionTag||'unknown'):'unknown',isCraftable:item.isCraftable,quantityPerUnit:item.quantity,totalQuantity:item.quantity,unitMarketPrice:state.craftPrices?.[item.ankamaId]||0,acquisitionMode:'buy'}));
-    line.subRecipeLoaded=true;line.subRecipeStatus='ready';emit();
+    line.subRecipeLoaded=true;line.subRecipeStatus='ready';
+    applyCommunityPrices(line.subRecipe,state.communityPrices||{});
+    emit();
+    void refreshCommunityPrices();
     if(openPlanner){
       const stack=pushToStack&&state.modal?.type==='craft-recipe-planner'?[...(state.modal.recipeStack||[]),line.id]:[line.id];
       openModal({type:'craft-recipe-planner',ingredientId:stack[0],recipeStack:stack});
@@ -317,23 +535,25 @@ async function loadSubrecipe(ingredientId, { openPlanner=false, pushToStack=fals
   } catch { line.subRecipeStatus='error';showToast(t(state,'v3.crafts.apiUnavailable'),'error');emit();return false; }
 }
 
-function saveCraftProject() {
+async function saveCraftProject() {
   const editor=state.craftEditor;if(!editor)return;const project=editor.project;
   if(!project.ankamaId||!project.itemNameSnapshot){showToast(t(state,'v3.crafts.chooseItemFirst'),'error');return;}
+  await flushDirtyIngredientPrices();
   const calc=calculateCraftProject(project,state.craftInventory);
   const ready=calc.readiness==='ready';
-  const saved=normalizeCraftProject({...project,status:ready?'ready':'draft',totalCost:calc.totalCost,financialCost:calc.totalCost,economicCost:calc.totalCost,accountingCost:calc.totalCost,replacementCost:calc.totalCost,updatedAt:nowIso()});
+  const activeServer=state.account?.selectedServer||activeServerFor();
+  const saved=normalizeCraftProject({...project,serverId:project.serverId||activeServer?.id||state.account?.user?.serverId||'',serverNameSnapshot:project.serverNameSnapshot||activeServer?.name||'',status:ready?'ready':'draft',totalCost:calc.totalCost,financialCost:calc.totalCost,economicCost:calc.totalCost,accountingCost:calc.totalCost,replacementCost:calc.totalCost,updatedAt:nowIso()});
   const exists=state.craftProjects.some(item=>item.id===saved.id);setCraftProjects(exists?state.craftProjects.map(item=>item.id===saved.id?saved:item):[saved,...state.craftProjects]);addActivity({module:'crafts',action:exists?'craft_project_updated':'craft_project_created',itemName:saved.itemNameSnapshot,itemImage:saved.itemImageSnapshot,entityId:saved.id,route:`/crafts/projetos/${encodeURIComponent(saved.id)}`,value:calc.totalCost});state.craftEditor=null;navigateTo('crafts');showToast(ready?t(state,'v3.crafts.savedAsReady'):t(state,'v3.crafts.savedAsDraft'));
 }
 
 function completeCraftProject(projectId, forSale=false) {
   const project=state.craftProjects.find(item=>item.id===projectId);if(!project)return;const calc=calculateCraftProject(project,state.craftInventory);
   if(calc.readiness!=='ready'){showToast(t(state,'v3.crafts.missingPrices',{count:calc.missingPrices.length+calc.missingRecipes.length}),'error');return;}
-  const batch=normalizeCraftBatch({projectId:project.id,ankamaId:project.ankamaId,itemNameSnapshot:project.itemNameSnapshot,itemImageSnapshot:project.itemImageSnapshot,itemTypeSnapshot:project.itemTypeSnapshot,professionTag:project.professionTag,producedQuantity:project.desiredQuantity,remainingQuantity:project.desiredQuantity,totalCost:calc.totalCost,financialCost:calc.totalCost,economicCost:calc.totalCost,accountingCost:calc.totalCost,unitCost:Math.round(calc.unitCost),desiredSalePrice:project.desiredSalePrice,status:forSale?'awaiting_sale':'in_stock',createdAt:nowIso()});
+  const batch=normalizeCraftBatch({projectId:project.id,serverId:project.serverId||'',serverNameSnapshot:project.serverNameSnapshot||'',ankamaId:project.ankamaId,itemNameSnapshot:project.itemNameSnapshot,itemImageSnapshot:project.itemImageSnapshot,itemTypeSnapshot:project.itemTypeSnapshot,professionTag:project.professionTag,producedQuantity:project.desiredQuantity,remainingQuantity:project.desiredQuantity,totalCost:calc.totalCost,financialCost:calc.totalCost,economicCost:calc.totalCost,accountingCost:calc.totalCost,unitCost:Math.round(calc.unitCost),desiredSalePrice:project.desiredSalePrice,status:forSale?'awaiting_sale':'in_stock',createdAt:nowIso()});
   let inventory=[...state.craftInventory];
-  const existing=inventory.find(item=>String(item.ankamaId)===String(batch.ankamaId));const merged=normalizeInventoryItem({...mergeInventory(existing,batch),id:existing?.id||createId('inventory'),updatedAt:nowIso()});inventory=existing?inventory.map(item=>item.id===existing.id?merged:item):[merged,...inventory];
-  const stockUsage=new Map();for(const ingredient of flattenCalculatedIngredients(calc.ingredients)){if(!ingredient.stockUsed||ingredient.ankamaId==null)continue;const key=String(ingredient.ankamaId);stockUsage.set(key,(stockUsage.get(key)||0)+ingredient.stockUsed);}
-  inventory=inventory.map(item=>{const used=stockUsage.get(String(item.ankamaId))||0;return used?normalizeInventoryItem({...item,quantity:Math.max(0,item.quantity-used),updatedAt:nowIso()}):item;});
+  const existing=inventory.find(item=>String(item.ankamaId)===String(batch.ankamaId)&&String(item.serverId||'')===String(batch.serverId||''));const merged=normalizeInventoryItem({...mergeInventory(existing,batch),serverId:batch.serverId||'',serverNameSnapshot:batch.serverNameSnapshot||'',id:existing?.id||createId('inventory'),updatedAt:nowIso()});inventory=existing?inventory.map(item=>item.id===existing.id?merged:item):[merged,...inventory];
+  const stockUsage=new Map();for(const ingredient of flattenCalculatedIngredients(calc.ingredients)){if(!ingredient.stockUsed||!ingredient.inventoryItemId)continue;const key=String(ingredient.inventoryItemId);stockUsage.set(key,(stockUsage.get(key)||0)+ingredient.stockUsed);}
+  inventory=inventory.map(item=>{const used=stockUsage.get(String(item.id))||0;return used?normalizeInventoryItem({...item,quantity:Math.max(0,item.quantity-used),updatedAt:nowIso()}):item;});
   setCraftBatches([batch,...state.craftBatches]);setCraftInventory(inventory);setCraftProjects(state.craftProjects.map(item=>item.id===project.id?normalizeCraftProject({...item,status:'finalized',completedAt:nowIso(),totalCost:calc.totalCost,financialCost:calc.totalCost,economicCost:calc.totalCost,accountingCost:calc.totalCost,updatedAt:nowIso()}):item));addActivity({module:'crafts',action:'craft_completed',itemName:project.itemNameSnapshot,itemImage:project.itemImageSnapshot,entityId:batch.id,route:'/crafts/estoque',value:calc.totalCost});closeModal();navigateTo('crafts');showToast(t(state,'v3.crafts.completeProduction'));
 }
 
@@ -343,7 +563,7 @@ function confirmCraftSale() {
   const relatedBatches=state.craftBatches.filter(batch=>(item.batchIds||[]).includes(batch.id)&&batch.remainingQuantity>0).sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt));
   const sourceBatch=relatedBatches[0]||null;
   const calc=calculateCraftSale({...draft,quantity,unitCost:item.weightedUnitCost});
-  const sale=normalizeCraftSale({...draft,inventoryItemId:item.id,sourceId:item.id,batchId:sourceBatch?.id||null,projectId:sourceBatch?.projectId||null,ankamaId:item.ankamaId,itemNameSnapshot:item.itemNameSnapshot,itemImageSnapshot:item.itemImageSnapshot,itemTypeSnapshot:item.itemTypeSnapshot,quantity,unitCost:item.weightedUnitCost,...calc,createdAt:nowIso()});
+  const sale=normalizeCraftSale({...draft,inventoryItemId:item.id,sourceId:item.id,batchId:sourceBatch?.id||null,projectId:sourceBatch?.projectId||null,ankamaId:item.ankamaId,itemNameSnapshot:item.itemNameSnapshot,itemImageSnapshot:item.itemImageSnapshot,itemTypeSnapshot:item.itemTypeSnapshot,serverId:item.serverId||'',serverNameSnapshot:item.serverNameSnapshot||'',server:draft.server||item.serverNameSnapshot||'',quantity,unitCost:item.weightedUnitCost,...calc,createdAt:nowIso()});
   const updated=normalizeInventoryItem({...item,quantity:item.quantity-quantity,soldQuantity:item.soldQuantity+quantity,forSale:item.quantity-quantity>0?item.forSale:false,updatedAt:nowIso()});
   let remainingToAllocate=quantity;
   const batches=state.craftBatches.map(batch=>{
@@ -357,6 +577,153 @@ function confirmCraftSale() {
 
 function confirmInventoryAdjust() {
   const modal=state.modal;const item=state.craftInventory.find(row=>row.id===modal.id);if(!item)return;const quantity=Math.max(0,Math.round(Number(modal.draft.quantity)||0));const reserved=Math.min(quantity,Math.max(0,Math.round(Number(modal.draft.reservedQuantity)||0)));const updated=normalizeInventoryItem({...item,quantity,reservedQuantity:reserved,desiredSalePrice:parseKamas(modal.draft.desiredSalePrice),updatedAt:nowIso()});setCraftInventory(state.craftInventory.map(row=>row.id===item.id?updated:row));addActivity({module:'crafts',action:'inventory_adjusted',itemName:item.itemNameSnapshot,itemImage:item.itemImageSnapshot,entityId:item.id,route:'/crafts/estoque',value:updated.quantity*updated.weightedUnitCost});closeModal();showToast(t(state,'common.save'));
+}
+
+
+function setAccountBusy(busy) {
+  state.accountUi.busy = Boolean(busy);
+  emit();
+}
+
+async function performLogin() {
+  const draft=state.accountUi.login||{};
+  if (!draft.email || !draft.password) { showToast(t(state,'toast.invalidStep'),'error'); return; }
+  setAccountBusy(true);
+  try {
+    const data=await accountApi.login({
+      email:draft.email,
+      password:draft.password,
+      rememberConnected:Boolean(draft.rememberConnected)
+    });
+    const session=saveAccountSession(data);
+    state.account.sessionToken=session?.sessionToken||data.sessionToken;
+    state.account.expiresAt=data.expiresAt||null;
+    state.account.rememberConnected=Boolean(data.rememberConnected);
+    applyAccountUser(data.user,{sessionToken:state.account.sessionToken,expiresAt:state.account.expiresAt,rememberConnected:state.account.rememberConnected});
+    state.accountUi.login={email:'',password:'',rememberConnected:Boolean(data.rememberConnected)};
+    state.accountUi.busy=false;
+    emit();
+    navigateTo('home');
+    showToast(data.message||t(state,'v310.account.enter'));
+  } catch(error) {
+    state.accountUi.busy=false;
+    emit();
+    showToast(accountErrorMessage(error),'error');
+  }
+}
+
+async function performRegister() {
+  const draft=state.accountUi.register||{};
+  if (!draft.displayName || !draft.email || !draft.serverId || !draft.password || draft.password!==draft.confirmPassword) {
+    showToast(t(state,'toast.invalidStep'),'error'); return;
+  }
+  setAccountBusy(true);
+  try {
+    const data=await accountApi.criarConta({
+      displayName:draft.displayName,
+      email:draft.email,
+      password:draft.password,
+      serverId:draft.serverId
+    });
+    state.accountUi.register={displayName:'',email:'',serverId:'',password:'',confirmPassword:''};
+    state.accountUi.busy=false;
+    emit();
+    navigateTo('login');
+    showToast(data.message||t(state,'v310.account.createAccount'));
+  } catch(error) {
+    state.accountUi.busy=false; emit(); showToast(accountErrorMessage(error),'error');
+  }
+}
+
+async function performForgotPassword() {
+  const email=state.accountUi.forgot?.email||'';
+  if (!email) { showToast(t(state,'toast.invalidStep'),'error'); return; }
+  setAccountBusy(true);
+  try {
+    const data=await accountApi.solicitarRecuperacaoSenha(email);
+    state.accountUi.busy=false; emit();
+    showToast(data.message||t(state,'v310.account.sendRecovery'));
+  } catch(error) {
+    state.accountUi.busy=false; emit(); showToast(accountErrorMessage(error),'error');
+  }
+}
+
+async function performResetPassword() {
+  const draft=state.accountUi.reset||{};
+  const token=new URLSearchParams(globalThis.location?.search||'').get('token')||'';
+  if (!token || !draft.password || draft.password!==draft.confirmPassword) { showToast(t(state,'toast.invalidStep'),'error'); return; }
+  setAccountBusy(true);
+  try {
+    const data=await accountApi.redefinirSenha({token,newPassword:draft.password});
+    state.accountUi.reset={password:'',confirmPassword:''};
+    state.accountUi.busy=false; emit();
+    navigateTo('login');
+    showToast(data.message||t(state,'v310.account.saveNewPassword'));
+  } catch(error) {
+    state.accountUi.busy=false; emit(); showToast(accountErrorMessage(error),'error');
+  }
+}
+
+async function performAccountSettingsSave() {
+  const draft=state.accountUi.settings||{};
+  if (!state.account?.sessionToken) { navigateTo('login'); return; }
+  setAccountBusy(true);
+  try {
+    const data=await accountApi.atualizarConfiguracoesConta({
+      sessionToken:state.account.sessionToken,
+      displayName:draft.displayName,
+      serverId:draft.serverId,
+      priceMode:draft.priceMode
+    });
+    applyAccountUser(data.user,{});
+    updateStoredAccountUser(data.user);
+    state.accountUi.busy=false; emit();
+    showToast(data.message||t(state,'common.save'));
+  } catch(error) {
+    state.accountUi.busy=false; emit(); showToast(accountErrorMessage(error),'error');
+  }
+}
+
+async function performChangePassword() {
+  const draft=state.accountUi.changePassword||{};
+  if (!draft.currentPassword || !draft.newPassword || draft.newPassword!==draft.confirmPassword) { showToast(t(state,'toast.invalidStep'),'error'); return; }
+  setAccountBusy(true);
+  try {
+    const data=await accountApi.alterarSenha({
+      sessionToken:state.account.sessionToken,
+      currentPassword:draft.currentPassword,
+      newPassword:draft.newPassword
+    });
+    const session=saveAccountSession({
+      sessionToken:data.sessionToken,
+      expiresAt:data.expiresAt,
+      rememberConnected:data.rememberConnected,
+      user:state.account.user
+    });
+    state.account.sessionToken=session.sessionToken;
+    state.account.expiresAt=session.expiresAt;
+    state.account.rememberConnected=session.rememberConnected;
+    state.accountUi.changePassword={currentPassword:'',newPassword:'',confirmPassword:''};
+    state.accountUi.busy=false; emit();
+    showToast(data.message||t(state,'v310.account.changePassword'));
+  } catch(error) {
+    state.accountUi.busy=false; emit(); showToast(accountErrorMessage(error),'error');
+  }
+}
+
+async function performLogout(all = false) {
+  const token=state.account?.sessionToken;
+  try {
+    if (token && isAccountApiConfigured()) {
+      if (all) await accountApi.logoutTodasSessoes(token);
+      else await accountApi.logout(token);
+    }
+  } catch {}
+  clearAccountSession();
+  applyAccountUser(null,{sessionToken:'',expiresAt:null,rememberConnected:false});
+  state.communityPrices={};
+  emit();
+  navigateTo('home');
 }
 
 function handleAction(button) {
@@ -399,18 +766,22 @@ function handleAction(button) {
   if(action==='open-craft-recipe'){void loadSubrecipe(button.dataset.id,{openPlanner:true});return;}
   if(action==='open-craft-recipe-level'){void loadSubrecipe(button.dataset.id,{openPlanner:true,pushToStack:true});return;}
   if(action==='craft-recipe-breadcrumb'&&state.modal?.type==='craft-recipe-planner'){const index=Math.max(0,Number(button.dataset.index)||0);state.modal.recipeStack=(state.modal.recipeStack||[]).slice(0,index+1);emit();return;}
-  if(action==='use-max-stock'){const line=findIngredientById(state.craftEditor?.project.ingredients||[],button.dataset.id);if(line){const inventory=state.craftInventory.find(item=>line.ankamaId!=null&&String(item.ankamaId)===String(line.ankamaId));const required=Math.max(1,(line.quantityPerUnit||1)*(state.craftEditor.project.desiredQuantity||1));line.useStockQuantity=Math.min(required,inventory?.availableQuantity||0);emit();}return;}
-  if(action==='save-craft-project'||action==='save-craft-project-draft'||action==='save-craft-project-ready'||action==='save-craft-project-auto'){saveCraftProject();return;}
+  if(action==='use-max-stock'){const line=findIngredientById(state.craftEditor?.project.ingredients||[],button.dataset.id);if(line){const inventory=state.craftInventory.find(item=>line.ankamaId!=null&&String(item.ankamaId)===String(line.ankamaId)&&String(item.serverId||'')===String(state.craftEditor.project.serverId||''));const required=Math.max(1,(line.quantityPerUnit||1)*(state.craftEditor.project.desiredQuantity||1));line.useStockQuantity=Math.min(required,inventory?.availableQuantity||0);emit();}return;}
+  if(action==='save-craft-project'||action==='save-craft-project-draft'||action==='save-craft-project-ready'||action==='save-craft-project-auto'){void saveCraftProject();return;}
   if(action==='exit-craft-editor'){state.craftEditor=null;navigateTo('crafts');return;}
   if(action==='craft-project-details'){openModal({type:'craft-project-details',id:button.dataset.id});return;}
   if(action==='complete-craft-project'){const project=state.craftProjects.find(item=>item.id===button.dataset.id)||state.craftEditor?.project;if(project){const calc=calculateCraftProject(project,state.craftInventory);if(calc.readiness!=='ready'){showToast(t(state,'v3.crafts.completeBlocked'),'error');return;}openModal({type:'complete-craft-project',id:project.id,draft:{forSale:false}});}return;}
   if(action==='confirm-complete-craft'){completeCraftProject(state.modal.id,Boolean(state.modal.draft?.forSale));return;}
   if(action==='toggle-inventory-sale'){const item=state.craftInventory.find(row=>row.id===button.dataset.id);if(item){const updated=normalizeInventoryItem({...item,forSale:!item.forSale,updatedAt:nowIso()});setCraftInventory(state.craftInventory.map(row=>row.id===item.id?updated:row));addActivity({module:'crafts',action:'craft_for_sale',itemName:item.itemNameSnapshot,itemImage:item.itemImageSnapshot,entityId:item.id,route:'/crafts/estoque',value:updated.desiredSalePrice*updated.availableQuantity});}return;}
-  if(action==='register-craft-sale'){const item=state.craftInventory.find(row=>row.id===button.dataset.id);if(item)openModal({type:'register-craft-sale',inventoryItemId:item.id,draft:{quantity:1,unitSalePrice:item.desiredSalePrice||0,channel:'HDV',otherCosts:0,buyer:'',server:'',notes:'',saleDate:toIsoLocalDateTime()}});return;}
+  if(action==='register-craft-sale'){const item=state.craftInventory.find(row=>row.id===button.dataset.id);if(item)openModal({type:'register-craft-sale',inventoryItemId:item.id,draft:{quantity:1,unitSalePrice:item.desiredSalePrice||0,channel:'HDV',otherCosts:0,buyer:'',server:item.serverNameSnapshot||'',notes:'',saleDate:toIsoLocalDateTime()}});return;}
   if(action==='confirm-craft-sale'){confirmCraftSale();return;}
   if(action==='inventory-adjust'){const item=state.craftInventory.find(row=>row.id===button.dataset.id);if(item)openModal({type:'inventory-adjust',id:item.id,draft:{quantity:item.quantity,reservedQuantity:item.reservedQuantity,desiredSalePrice:item.desiredSalePrice}});return;}
   if(action==='confirm-inventory-adjust'){confirmInventoryAdjust();return;}
   if(action==='global-sale-details'){openModal({type:button.dataset.module==='pets'?'sale-details':'craft-sale-details',id:button.dataset.id});return;}
+  if(action==='use-community-price'){const line=findIngredientRecursive(state.craftEditor?.project.ingredients||[],button.dataset.id);if(line&&Number(line.communityPriceUnit)>0){line.unitMarketPrice=Number(line.communityPriceUnit);line.priceInputSource='community';line.priceDirty=false;line.priceSyncStatus='idle';emit();}return;}
+  if(action==='refresh-community-prices'){void refreshCommunityPrices({overwriteManual:false});return;}
+  if(action==='account-logout'){void performLogout(false);return;}
+  if(action==='account-logout-all'){void performLogout(true);return;}
   if(action==='open-support'){openModal({type:'support'});return;}
   if(action==='open-information'){openInformation(button.dataset.section||'about');return;}
   if(action==='information-section'){state.modal={...state.modal,section:button.dataset.section};history.replaceState(null,'',`${location.pathname}#${button.dataset.section==='how'?'como-funciona':button.dataset.section}`);emit();return;}
@@ -446,6 +817,28 @@ async function copyText(value, successMessage=t(state,'common.copied')) {
 }
 async function copyPix() { return copyText(PIX_KEY,t(state,'common.copied')); }
 
+
+function updateAccountDraft(path, target) {
+  const [section, field] = String(path || '').split('.');
+  if (!section || !field) return;
+  const current = state.accountUi[section] || {};
+  let value = target.type === 'checkbox' ? target.checked : target.value;
+  state.accountUi[section] = { ...current, [field]: value };
+}
+
+app.addEventListener('submit',event=>{
+  const form=event.target.closest('[data-form]');
+  if(!form)return;
+  event.preventDefault();
+  const type=form.dataset.form;
+  if(type==='login'){void performLogin();return;}
+  if(type==='register'){void performRegister();return;}
+  if(type==='forgot-password'){void performForgotPassword();return;}
+  if(type==='reset-password'){void performResetPassword();return;}
+  if(type==='account-settings'){void performAccountSettingsSave();return;}
+  if(type==='change-password'){void performChangePassword();return;}
+});
+
 app.addEventListener('focusin',event=>{
   if(event.target.matches('[data-field="creatureQuery"]')&&state.simulationEditor&&!state.simulationEditor.comboOpen){state.simulationEditor.comboOpen=true;emit();return;}
   if(event.target.matches('[data-resource-picker-search]')&&state.simulationEditor&&!state.simulationEditor.resourceComboOpen){state.simulationEditor.resourceComboOpen=true;emit();return;}
@@ -459,12 +852,13 @@ app.addEventListener('click',event=>{
 });
 
 app.addEventListener('change',event=>{
+  const accountField=event.target.dataset.accountField;if(accountField){updateAccountDraft(accountField,event.target);}
   const field=event.target.dataset.field;if(field)updateEditorField(field,event.target.value,true);
   const resourceField=event.target.dataset.resourceField;if(resourceField&&state.simulationEditor){const line=state.simulationEditor.simulation.resourceLines.find(x=>x.id===event.target.dataset.id);if(line){if(resourceField==='quantity')line.quantity=Math.max(1,Math.trunc(Number(event.target.value)||1));else if(resourceField==='unitPrice')line.unitPrice=parseKamas(event.target.value);else if(resourceField==='customXp'){line.customXp=Math.max(0,Number(String(event.target.value).replace(',','.'))||0);line.xpUnit=line.customXp;line.xpSource='manual';rememberResourceXp(line,line.customXp);}emit();}}
   const resourceDraftField=event.target.dataset.resourceDraft;if(resourceDraftField&&state.simulationEditor){const draft=state.simulationEditor.resourceDraft||(state.simulationEditor.resourceDraft={xp:0,quantity:1,unitPrice:0,custom:false});if(resourceDraftField==='xp')draft.xp=Math.max(0,Number(String(event.target.value).replace(',','.'))||0);else if(resourceDraftField==='quantity')draft.quantity=Math.max(1,Math.trunc(Number(event.target.value)||1));else if(resourceDraftField==='unitPrice')draft.unitPrice=parseKamas(event.target.value);emit();}
   const saleField=event.target.dataset.saleField;if(saleField&&state.modal?.type==='register-sale'){state.modal.draft[saleField]=['originCost','upCost','salePrice'].includes(saleField)?parseKamas(event.target.value):event.target.value;emit();}
   const craftField=event.target.dataset.craftField;if(craftField)updateCraftField(craftField,event.target.value,true);
-  const ingredientField=event.target.dataset.craftIngredientField;if(ingredientField&&state.craftEditor){const line=findIngredientById(state.craftEditor.project.ingredients,event.target.dataset.id);if(line){if(['unitMarketPrice','useStockQuantity'].includes(ingredientField))line[ingredientField]=parseKamas(event.target.value);else line[ingredientField]=event.target.value;line.totalQuantity=line.quantityPerUnit*state.craftEditor.project.desiredQuantity;if(!['finalized','cancelled'].includes(state.craftEditor.project.status))state.craftEditor.project.status='draft';if(ingredientField==='acquisitionMode'&&line.acquisitionMode==='craft'){void loadSubrecipe(line.id,{openPlanner:true});return;}emit();}}
+  const ingredientField=event.target.dataset.craftIngredientField;if(ingredientField&&state.craftEditor){const line=findIngredientById(state.craftEditor.project.ingredients,event.target.dataset.id);if(line){if(ingredientField==='unitMarketPrice')markIngredientPriceEdited(line,parseKamas(event.target.value));else if(ingredientField==='useStockQuantity')line[ingredientField]=parseKamas(event.target.value);else line[ingredientField]=event.target.value;line.totalQuantity=line.quantityPerUnit*state.craftEditor.project.desiredQuantity;if(!['finalized','cancelled'].includes(state.craftEditor.project.status))state.craftEditor.project.status='draft';if(ingredientField==='acquisitionMode'&&line.acquisitionMode==='craft'){void loadSubrecipe(line.id,{openPlanner:true});return;}if(ingredientField==='acquisitionMode'&&line.acquisitionMode!=='craft'&&state.modal?.type==='craft-recipe-planner'){closeModal();return;}emit();if(ingredientField==='unitMarketPrice')void publishIngredientPrice(line);}}
   const craftSaleField=event.target.dataset.craftSaleField;if(craftSaleField&&state.modal?.type==='register-craft-sale'){state.modal.draft[craftSaleField]=['quantity','unitSalePrice','otherCosts'].includes(craftSaleField)?parseKamas(event.target.value):event.target.value;emit();}
   const inventoryAdjustField=event.target.dataset.inventoryAdjustField;if(inventoryAdjustField&&state.modal?.type==='inventory-adjust'){state.modal.draft[inventoryAdjustField]=parseKamas(event.target.value);emit();}
   const completeField=event.target.dataset.craftCompleteField;if(completeField&&state.modal?.type==='complete-craft-project'){state.modal.draft[completeField]=event.target.checked;}
@@ -477,6 +871,7 @@ app.addEventListener('change',event=>{
 });
 
 app.addEventListener('input',event=>{
+  const accountField=event.target.dataset.accountField;if(accountField){updateAccountDraft(accountField,event.target);return;}
   if(event.target.matches('[data-resource-picker-search]')&&state.simulationEditor){const editor=state.simulationEditor;editor.resourceQuery=event.target.value;editor.resourceComboOpen=true;editor.selectedResourceId='';editor.resourceDraft={...(editor.resourceDraft||{}),xp:0,custom:false};updatePetResourceListDom();return;}
   const field=event.target.dataset.field;if(field==='creatureQuery'&&state.simulationEditor){state.simulationEditor.creatureQuery=event.target.value;state.simulationEditor.comboOpen=true;updatePetCreatureListDom();return;}if(field&&state.simulationEditor){updateEditorField(field,event.target.value,false);return;}
   const resourceField=event.target.dataset.resourceField;if(resourceField&&state.simulationEditor){const line=state.simulationEditor.simulation.resourceLines.find(x=>x.id===event.target.dataset.id);if(line){if(resourceField==='quantity')line.quantity=Math.max(1,Math.trunc(Number(event.target.value)||1));else if(resourceField==='unitPrice')line.unitPrice=parseKamas(event.target.value);else if(resourceField==='customXp'){line.customXp=Math.max(0,Number(String(event.target.value).replace(',','.'))||0);line.xpUnit=line.customXp;line.xpSource='manual';rememberResourceXp(line,line.customXp);}return;}}
@@ -484,7 +879,7 @@ app.addEventListener('input',event=>{
   const saleField=event.target.dataset.saleField;if(saleField&&state.modal?.type==='register-sale'){state.modal.draft[saleField]=['originCost','upCost','salePrice'].includes(saleField)?parseKamas(event.target.value):event.target.value;return;}
   if(event.target.matches('[data-craft-item-search]')&&state.craftEditor){state.craftEditor.itemQuery=event.target.value;state.craftEditor.searchOpen=true;scheduleCraftSearch(event.target.value);return;}
   const craftField=event.target.dataset.craftField;if(craftField){updateCraftField(craftField,event.target.value,false);return;}
-  const ingredientField=event.target.dataset.craftIngredientField;if(ingredientField&&state.craftEditor){const line=findIngredientById(state.craftEditor.project.ingredients,event.target.dataset.id);if(line){if(['unitMarketPrice','useStockQuantity'].includes(ingredientField))line[ingredientField]=parseKamas(event.target.value);else line[ingredientField]=event.target.value;if(!['finalized','cancelled'].includes(state.craftEditor.project.status))state.craftEditor.project.status='draft';}return;}
+  const ingredientField=event.target.dataset.craftIngredientField;if(ingredientField&&state.craftEditor){const line=findIngredientById(state.craftEditor.project.ingredients,event.target.dataset.id);if(line){if(ingredientField==='unitMarketPrice')markIngredientPriceEdited(line,parseKamas(event.target.value));else if(ingredientField==='useStockQuantity')line[ingredientField]=parseKamas(event.target.value);else line[ingredientField]=event.target.value;if(!['finalized','cancelled'].includes(state.craftEditor.project.status))state.craftEditor.project.status='draft';}return;}
   const craftSaleField=event.target.dataset.craftSaleField;if(craftSaleField&&state.modal?.type==='register-craft-sale'){state.modal.draft[craftSaleField]=['quantity','unitSalePrice','otherCosts'].includes(craftSaleField)?parseKamas(event.target.value):event.target.value;return;}
   const inventoryAdjustField=event.target.dataset.inventoryAdjustField;if(inventoryAdjustField&&state.modal?.type==='inventory-adjust'){state.modal.draft[inventoryAdjustField]=parseKamas(event.target.value);return;}
   const globalSalesFilter=event.target.dataset.globalSalesFilter;if(globalSalesFilter==='search'){state.globalSalesFilter.search=event.target.value;return;}

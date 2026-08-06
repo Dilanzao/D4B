@@ -26,7 +26,7 @@ async function collectJs(dir) {
 if (!bundle) bundle = await collectJs(resolve(dist, 'src'));
 if (!css) css = await readFile(resolve(root, 'src/styles/components.css'), 'utf8');
 
-assert.match(html, /Dofus4Business v3\.0\.3/);
+assert.match(html, /Dofus4Business v3\.1\.0/);
 assert.match(html, /id="app"/);
 for (const slot of ['ad-slot-header','ad-slot-sidebar','ad-slot-middle','ad-slot-footer']) assert.match(`${bundle}\n${html}`,new RegExp(slot));
 
@@ -40,6 +40,13 @@ assert.match(focusSource, /setSelectionRange/);
 assert.match(mainSource, /captureFocusSnapshot\(app\)/);
 assert.match(mainSource, /restoreFocusSnapshot\(app, focusSnapshot\)/);
 assert.match(mainSource, /updateCraftField\(craftField,event\.target\.value,false\)/);
+const scrollSource = await readFile(resolve(root, 'src/utils/scrollPreservation.js'), 'utf8');
+const accountSource = await readFile(resolve(root, 'src/services/accountApiService.js'), 'utf8');
+const runtimeConfig = await readFile(resolve(dist, 'runtime-config.js'), 'utf8');
+assert.match(scrollSource, /data-scroll-key/);
+assert.match(accountSource, /consultarPrecosEmLote/);
+assert.match(runtimeConfig, /accountApiUrl/);
+assert.match(html, /runtime-config\.js/);
 
 assert.match(bundle, /d4b_pending_route/);
 assert.match(css, /module-card/);
@@ -49,6 +56,8 @@ assert.match(css, /recipe-planner-modal/);
 assert.match(mainSource, /open-craft-recipe-level/);
 assert.match(mainSource, /action==='copy-name'/);
 assert.match(css, /craft-editor-layout/);
+assert.match(css, /account-chip/);
+assert.match(css, /community-price-box/);
 const notFound = await readFile(resolve(dist, '404.html'), 'utf8');
 assert.match(notFound, /d4b_pending_route/);
 console.log('DOM/build smoke test passed.');

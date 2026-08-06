@@ -8,6 +8,7 @@ const activeFor = (routeName, group) => {
   if (group === 'crafts') return routeName?.startsWith('craft');
   if (group === 'global-sales') return routeName === 'global-sales';
   if (group === 'settings') return routeName === 'settings';
+  if (group === 'account') return ['login','register','forgot-password','verify-email','reset-password','account-settings'].includes(routeName);
   return false;
 };
 
@@ -36,6 +37,10 @@ export function renderHeader(state) {
     <span class="version-pill">v${APP_VERSION}</span>
     <nav class="nav" aria-label="${escapeHtml(t(state,'v3.nav.home'))}">${nav}${how}</nav>
     <div class="header-actions">
+      <button class="account-chip ${state.account?.user?'connected':'anonymous'}" data-action="route" data-route="${state.account?.user?'account-settings':'login'}" aria-label="${escapeHtml(state.account?.user?t(state,'v310.account.settingsTitle'):t(state,'v310.account.enter'))}">
+        ${icon('user',18)}
+        <span><strong>${escapeHtml(state.account?.user?.displayName||t(state,'v310.account.enter'))}</strong><small>${escapeHtml(state.account?.selectedServer?.name||state.account?.user?.serverId||t(state,'v310.account.notConnected'))}</small></span>
+      </button>
       <button class="button ghost support-top" data-action="open-support">${icon('heart',17)} ${escapeHtml(t(state,'nav.support'))}</button>
       <button class="icon-button mobile-toggle" data-action="toggle-mobile" aria-label="Menu" aria-expanded="false">${icon('menu')}</button>
     </div>

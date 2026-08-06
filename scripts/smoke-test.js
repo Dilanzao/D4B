@@ -20,8 +20,9 @@ import { clearCraftApiCache, fetchCraftItemDetails, searchCraftItems } from '../
 import { adaptLegacyPetSale } from '../src/modules/pets/legacyPetSalesAdapter.js';
 import { aggregateGlobalMetrics, resolveGlobalPeriod } from '../src/modules/global/globalDashboardAggregator.js';
 import { matchRoute, pathFor } from '../src/router/router.js';
+import { applyCommunityPrices, collectDirtyIngredientPrices, collectRecipeAnkamaIds, markIngredientPriceEdited } from '../src/services/communityPriceService.js';
 
-assert.equal(APP_VERSION,'3.0.3');
+assert.equal(APP_VERSION,'3.1.0');
 assert.equal(DEFAULT_CONSENT.analytics,false);assert.equal(DEFAULT_CONSENT.advertising,false);
 
 const storage = new Map();
@@ -90,6 +91,12 @@ assert.deepEqual(matchRoute('/pets/simulacoes/abc').params,{id:'abc'});
 assert.equal(matchRoute('/crafts/projetos/novo').name,'craft-project-new');
 assert.equal(matchRoute('/crafts/projetos/proj-1').name,'craft-project-edit');
 assert.equal(pathFor('craft-inventory'),'/crafts/estoque');
+assert.equal(matchRoute('/entrar').name,'login');
+assert.equal(matchRoute('/criar-conta').name,'register');
+assert.equal(matchRoute('/esqueci-senha').name,'forgot-password');
+assert.equal(matchRoute('/verificar-email').name,'verify-email');
+assert.equal(matchRoute('/redefinir-senha').name,'reset-password');
+assert.equal(matchRoute('/conta').name,'account-settings');
 
 // Crafts: unified cost, recursive recipes, inventory recovery, batches and partial sales.
 const sourceInventory=[normalizeInventoryItem({id:'stock-metal',ankamaId:2,itemNameSnapshot:'Metal',quantity:4,availableQuantity:4,weightedUnitCost:2000})];
@@ -120,18 +127,32 @@ const allMetrics=aggregateGlobalMetrics(globalState,{module:'all',period:'all'})
 const petsOnly=aggregateGlobalMetrics(globalState,{module:'pets',period:'all'});assert.equal(petsOnly.sales.length,1);assert.equal(petsOnly.sales[0].module,'pets');
 const futureRange=resolveGlobalPeriod({period:'custom',from:'2030-01-01',to:'2030-01-31'});assert.ok(futureRange.from instanceof Date);assert.equal(aggregateGlobalMetrics(globalState,{module:'all',period:'custom',from:'2030-01-01',to:'2030-01-31'}).sales.length,0);
 
+// Community prices are recursive, server-aware and do not overwrite a manual value by default.
+const communityTree=[{id:'root-line',ankamaId:501,nameSnapshot:'A',unitMarketPrice:0,subRecipe:[{id:'child-line',ankamaId:502,nameSnapshot:'B',unitMarketPrice:900,priceInputSource:'manual'}]}];
+assert.deepEqual(collectRecipeAnkamaIds(communityTree),['501','502']);
+applyCommunityPrices(communityTree,{'501':{unitPrice:1200,registeredAt:'2026-08-05T00:00:00Z',ageDays:0,freshness:'FRESH',source:'COMUNIDADE'},'502':{unitPrice:800,registeredAt:'2026-07-25T00:00:00Z',ageDays:11,freshness:'STALE',source:'COMUNIDADE'}});
+assert.equal(communityTree[0].unitMarketPrice,1200);
+assert.equal(communityTree[0].subRecipe[0].unitMarketPrice,900);
+assert.equal(communityTree[0].subRecipe[0].communityPriceFreshness,'STALE');
+markIngredientPriceEdited(communityTree[0],1300);
+assert.equal(collectDirtyIngredientPrices(communityTree).length,1);
+
 // Numeric input regression: input handlers mutate state without a full render; full renders preserve selection.
 const mainSource=await readFile(new URL('../src/main.js',import.meta.url),'utf8');
 const focusSource=await readFile(new URL('../src/utils/focusPreservation.js',import.meta.url),'utf8');
+  const scrollSource=await readFile(new URL('../src/utils/scrollPreservation.js',import.meta.url),'utf8');
+  const accountApiSource=await readFile(new URL('../src/services/accountApiService.js',import.meta.url),'utf8');
 assert.match(mainSource,/captureFocusSnapshot\(app\)/);assert.match(mainSource,/restoreFocusSnapshot\(app, focusSnapshot\)/);
 assert.match(focusSource,/selectionStart/);assert.match(focusSource,/selectionEnd/);assert.match(focusSource,/setSelectionRange/);
+assert.match(scrollSource,/scrollTop/);assert.match(scrollSource,/data-scroll-key/);
+assert.match(accountApiSource,/consultarPrecosEmLote/);assert.match(accountApiSource,/registrarPrecosEmLote/);assert.doesNotMatch(accountApiSource,/Authorization/);
 assert.match(mainSource,/if\(field&&state\.simulationEditor\)\{updateEditorField\(field,event\.target\.value,false\);return;\}/);
 assert.match(mainSource,/if\(craftField\)\{updateCraftField\(craftField,event\.target\.value,false\);return;\}/);
 assert.doesNotMatch(mainSource,/if\(field&&state\.simulationEditor\)\{updateEditorField\(field,event\.target\.value,true\)/);
 assert.doesNotMatch(mainSource,/remove-craft-ingredient/);
 
 const plannerSource=await readFile(new URL('../src/modules/crafts/components/craftRecipePlanner.js',import.meta.url),'utf8');
-assert.match(plannerSource,/recipeStack/);assert.match(plannerSource,/craft-recipe-breadcrumb/);assert.match(plannerSource,/readyMarketPrice/);
+assert.match(plannerSource,/recipeStack/);assert.match(plannerSource,/craft-recipe-breadcrumb/);assert.match(plannerSource,/renderCommunityPriceBox/);assert.match(plannerSource,/observedPrice/);
 assert.match(mainSource,/action==='copy-name'/);assert.match(mainSource,/copyText\(button\.dataset\.name/);
 
 

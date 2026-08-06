@@ -14,7 +14,13 @@ const ROUTES = [
   { name: 'craft-sales', pattern: /^\/crafts\/vendas\/?$/, build: () => '/crafts/vendas' },
   { name: 'global-sales', pattern: /^\/vendas\/?$/, build: () => '/vendas' },
   { name: 'global-inventory', pattern: /^\/estoque\/?$/, build: () => '/estoque' },
-  { name: 'settings', pattern: /^\/configuracoes\/?$/, build: () => '/configuracoes' }
+  { name: 'settings', pattern: /^\/configuracoes\/?$/, build: () => '/configuracoes' },
+  { name: 'login', pattern: /^\/entrar\/?$/, build: () => '/entrar' },
+  { name: 'register', pattern: /^\/criar-conta\/?$/, build: () => '/criar-conta' },
+  { name: 'forgot-password', pattern: /^\/esqueci-senha\/?$/, build: () => '/esqueci-senha' },
+  { name: 'verify-email', pattern: /^\/verificar-email\/?$/, build: () => '/verificar-email' },
+  { name: 'reset-password', pattern: /^\/redefinir-senha\/?$/, build: () => '/redefinir-senha' },
+  { name: 'account-settings', pattern: /^\/conta\/?$/, build: () => '/conta' },
 ];
 
 function normalizedPath(pathname = '/') {

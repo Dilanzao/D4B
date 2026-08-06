@@ -154,3 +154,46 @@ O modal mantém uma pilha de identificadores em `modal.recipeStack`. Apenas um n
 O custo alternativo de fabricação é calculado sem alterar `acquisitionMode`, permitindo comparar a compra do componente pronto com a fabricação recursiva. A mudança de estratégia continua explícita e somente a estratégia escolhida entra no custo final do projeto.
 
 A ação global `copy-name` utiliza o texto já traduzido e exibido na tela. Nenhum identificador técnico ou nome canônico diferente do idioma ativo é copiado.
+
+## Evolução v3.1.0 — contas e preços comunitários
+
+### Configuração em tempo de execução
+
+`public/runtime-config.js` é carregado antes de `src/main.js` e expõe somente a URL pública `/exec` do Web App. Nenhuma credencial privada fica no frontend.
+
+### Camada de contas
+
+- `accountApiService.js`: contrato HTTP com o Apps Script;
+- `accountSessionService.js`: persistência local ou por aba;
+- `accountPages.js`: telas públicas e Configurações de conta;
+- `accountApi.js`: validação central da URL;
+- estado `account`: sessão, usuário, servidor e configuração;
+- estado `accountUi`: formulários e estados transitórios.
+
+O token é enviado dentro do JSON porque a API do Apps Script foi construída com esse contrato.
+
+### Preços
+
+`communityPriceService.js` percorre a receita de forma recursiva. A consulta é feita em lote por `ankama_id`. O preço comunitário é mantido separado do preço efetivamente usado no projeto.
+
+A digitação altera apenas o estado do ingrediente. O POST ocorre no evento de confirmação do campo ou antes do salvamento. Isso evita requisições por caractere e preserva o cursor.
+
+### Servidores e snapshots
+
+O servidor é congelado em:
+
+- projeto;
+- lote;
+- item de estoque;
+- venda de craft.
+
+O estoque é consolidado apenas quando `ankamaId` e `serverId` coincidem.
+
+### Rolagem e foco
+
+`focusPreservation.js` mantém o elemento ativo e a seleção. `scrollPreservation.js` mantém a rolagem da janela e de elementos identificados por `data-scroll-key` quando a rota não mudou.
+
+### Falha isolada
+
+A indisponibilidade da API de contas não bloqueia os módulos locais. Contas e preços mostram um estado de erro, enquanto Up de Pets, simulações e históricos locais permanecem acessíveis.
+

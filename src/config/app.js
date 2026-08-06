@@ -1,4 +1,4 @@
-export const APP_VERSION = "3.0.3";
+export const APP_VERSION = "3.1.0";
 export const APP_NAME = "Dofus4Business";
 export const APP_DOMAIN = "https://dofus4business.com.br";
 export const PIX_KEY = "Apoie@dofus4business.com.br";
@@ -21,5 +21,5 @@ export const DEFAULT_CONSENT = Object.freeze({
   decidedAt: null
 });
 
-export const STORAGE_SCHEMA_VERSION = 4;
+export const STORAGE_SCHEMA_VERSION = 5;
 export const DOFUSDUDE_API_BASE = "https://api.dofusdu.de/dofus3/v1";

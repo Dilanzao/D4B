@@ -1,13 +1,13 @@
 import { escapeHtml, icon, t } from '../../../components/common.js';
 import { formatKamas } from '../../../utils/currency.js';
 
-function freshnessClass(line) {
+export function freshnessClass(line) {
   if (line.communityPriceFreshness === 'STALE' || Number(line.communityPriceAgeDays) > 7) return 'stale';
   if (line.communityPriceFreshness === 'WARNING' || Number(line.communityPriceAgeDays) > 3) return 'warning';
   return 'fresh';
 }
 
-function ageText(state, line) {
+export function ageText(state, line) {
   const days=Math.max(0,Number(line.communityPriceAgeDays)||0);
   if (!line.communityPriceRegisteredAt) return t(state,'v310.prices.noPrice');
   if (days===0) return t(state,'v310.prices.updatedToday');
@@ -21,9 +21,8 @@ export function renderCommunityPriceBox(state, line) {
   const value=Number(line.communityPriceUnit)||0;
   const status=line.priceSyncStatus||'idle';
   const source=line.communityPriceSource==='PROPRIOS'||line.communityPriceIsOwn?t(state,'v310.prices.ownSource'):t(state,'v310.prices.communitySource');
-  if (!logged) {
-    return `<div class="community-price-box signed-out">${icon('user',16)}<span>${escapeHtml(t(state,'v310.prices.loginToUse'))}</span><button type="button" data-action="route" data-route="login">${escapeHtml(t(state,'v310.account.enter'))}</button></div>`;
-  }
+  // O convite para entrar aparece uma única vez, no topo do projeto.
+  if (!logged) return '';
   if (!configured) {
     return `<div class="community-price-box warning">${icon('alert',16)}<span>${escapeHtml(t(state,'v310.account.apiNotConfiguredTitle'))}</span></div>`;
   }

@@ -2,159 +2,200 @@ import { MAX_LEVEL } from '../data/xpTable.js';
 import { creatureCatalog, getCreatureById, getCreatureName } from '../data/creatures.js';
 import { normalizeResourceText } from '../data/feedingResources.js';
 import { calculateSimulation, getLevelXpLimit } from '../utils/calculations.js';
-import { formatCompactKamas, formatNumber } from '../utils/currency.js';
+import { formatCompactKamas, formatKamas, formatNumber } from '../utils/currency.js';
 import { includesNormalized } from '../utils/textSearch.js';
-import { findResourceCatalogItem, searchResourceCatalog } from '../services/resourceCatalogService.js';
+import { searchResourceCatalog } from '../services/resourceCatalogService.js';
+import { BAG, KOLITOKENS, RATION, foodAnkamaId } from '../modules/pets/petPlan.js';
+import { alternativeXp, isUncertainXp } from '../data/petXp.js';
+import { rankKnownFoods } from '../modules/pets/petCommunity.js';
+import { ageText, freshnessClass, renderCraftServerContext } from '../modules/crafts/components/communityPriceUi.js';
+import { RATION_ANKAMA_ID, RATION_XP } from '../config/app.js';
+import { getFeedingXp } from '../services/resourceCatalogService.js';
 import { copyableIcon, copyableImage, escapeHtml, icon, imageTag, t } from './common.js';
+import { renderDisclosure } from './pageLayout.js';
 
-export const methodKey = {
-  vitaminizedFood: 'marketFood',
-  kolitokenBag: 'kolitokenBag',
-  combined: 'combined',
-  resources: 'combined'
-};
+const RESOURCE_RESULTS = 200;
 
 function fieldError(editor, key, state) {
   const errorKey = editor.errors?.[key];
   return errorKey ? `<span class="error" id="error-${key}">${escapeHtml(t(state, `simulation.validation.${errorKey}`))}</span>` : '';
 }
 
-function renderStepper(state, editor) {
-  const labels = ['creature', 'levels', 'method', 'costs', 'review'];
-  return `<div class="stepper" aria-label="${escapeHtml(t(state, 'simulation.stepLabel', { current: editor.step, total: 5 }))}">${labels.map((key, index) => {
-    const step = index + 1;
-    const cls = step === editor.step ? 'active' : step < editor.step ? 'complete' : '';
-    return `<button class="step ${cls}" data-action="go-step" data-step="${step}" ${step > editor.maxReached ? 'disabled' : ''} ${step === editor.step ? 'aria-current="step"' : ''}><span>${step < editor.step ? '✓' : step}</span><strong>${escapeHtml(t(state, `simulation.steps.${key}`))}</strong></button>`;
-  }).join('')}</div>`;
+function kamasInput(attributes, value) {
+  return `<div class="input-wrap"><input class="input" inputmode="numeric" placeholder="0" ${attributes} value="${value || ''}"><span class="suffix">K</span></div>`;
 }
 
-function renderCreatureStep(state, editor) {
-  const sim = editor.simulation;
-  const selected = getCreatureById(sim.creatureId);
-  const query = editor.creatureQuery || '';
-  const filtered = creatureCatalog.filter((creature) => creature.type === sim.creatureType
-    && [getCreatureName(creature, state.language), creature.canonicalName, ...Object.values(creature.names || {})]
-      .some((name) => includesNormalized(name, query)));
+const typeLabel = (state, creature) => t(state, creature.type === 'Mascote' ? 'simulation.pet' : 'simulation.petsmount');
 
-  return `<div class="stack"><div class="form-grid">
-    <label class="field" for="creature-type"><span>${escapeHtml(t(state, 'simulation.creatureType'))}</span><select class="select" id="creature-type" data-field="creatureType"><option value="Mascote" ${sim.creatureType === 'Mascote' ? 'selected' : ''}>${escapeHtml(t(state, 'simulation.pet'))}</option><option value="Montascote" ${sim.creatureType === 'Montascote' ? 'selected' : ''}>${escapeHtml(t(state, 'simulation.petsmount'))}</option></select></label>
-    <div class="field creature-combobox"><label for="creature-search">${escapeHtml(t(state, 'simulation.species'))}</label><div class="input-wrap"><input class="input" id="creature-search" data-field="creatureQuery" role="combobox" aria-expanded="${editor.comboOpen ? 'true' : 'false'}" aria-controls="creature-options" aria-autocomplete="list" autocomplete="off" value="${escapeHtml(editor.comboOpen ? query : (query || getCreatureName(selected, state.language)))}" placeholder="${escapeHtml(t(state, 'simulation.searchCreature'))}" aria-invalid="${Boolean(editor.errors?.creatureId)}"><span class="suffix">${icon('search', 17)}</span></div>
-    ${editor.comboOpen ? `<div class="combobox-list" id="creature-options" role="listbox">${filtered.length ? filtered.map((creature, index) => `<button class="combobox-option" type="button" role="option" aria-selected="${creature.id === sim.creatureId}" data-action="select-creature" data-id="${creature.id}" data-index="${index}">${imageTag(creature.imageUrl, getCreatureName(creature, state.language))}<span><strong>${escapeHtml(getCreatureName(creature, state.language))}</strong><small class="muted">${escapeHtml(creature.type === 'Mascote' ? t(state, 'simulation.pet') : t(state, 'simulation.petsmount'))}</small></span></button>`).join('') : `<p class="small muted" style="padding:12px">${escapeHtml(t(state, 'common.noResults'))}</p>`}</div>` : ''}
-    ${fieldError(editor, 'creatureId', state)}</div>
-    <label class="field" for="simulation-name"><span>${escapeHtml(t(state, 'simulation.simulationName'))}</span><input class="input" id="simulation-name" data-field="name" value="${escapeHtml(sim.name)}"><small>${escapeHtml(t(state, 'simulation.autoNameHint'))}</small></label>
-  </div>${selected ? `<div class="selected-creature">${copyableImage(selected.imageUrl, getCreatureName(selected, state.language), 'creature-thumb large', '', t(state,'v303.copyItemName',{name:getCreatureName(selected,state.language)}))}<div><span class="eyebrow">${escapeHtml(t(state, 'simulation.selectedCreature'))}</span><h2>${escapeHtml(getCreatureName(selected, state.language))}</h2><p class="muted">${escapeHtml(selected.canonicalName)} · ${escapeHtml(selected.type === 'Mascote' ? t(state, 'simulation.pet') : t(state, 'simulation.petsmount'))}</p></div></div>` : ''}</div>`;
+export function creatureOptionsMarkup(state, editor) {
+  const filtered = creatureCatalog.filter(creature => [getCreatureName(creature, state.language), creature.canonicalName, ...Object.values(creature.names || {})].some(name => includesNormalized(name, editor.creatureQuery || '')));
+  if (!filtered.length) return `<p class="small muted" style="padding:12px">${escapeHtml(t(state, 'common.noResults'))}</p>`;
+  return filtered.map((creature, index) => `<button class="combobox-option" type="button" role="option" aria-selected="${creature.id === editor.simulation.creatureId}" data-action="select-creature" data-id="${creature.id}" data-index="${index}">${imageTag(creature.imageUrl, getCreatureName(creature, state.language))}<span><strong>${escapeHtml(getCreatureName(creature, state.language))}</strong><small class="muted">${escapeHtml(typeLabel(state, creature))}</small></span></button>`).join('');
 }
 
-function renderLevelsStep(state, editor, calc) {
-  const sim = editor.simulation;
-  const max = getLevelXpLimit(sim.originLevel);
-  const bonus = Number(sim.xpBonusPercent || 0);
-  return `<div class="stack"><div class="form-grid four">
-    <label class="field" for="origin-level"><span>${escapeHtml(t(state, 'simulation.originLevel'))}</span><input class="input" id="origin-level" data-field="originLevel" type="number" min="0" max="99" value="${sim.originLevel}" aria-invalid="${Boolean(editor.errors?.originLevel)}">${fieldError(editor, 'originLevel', state)}</label>
-    <label class="field" for="current-xp"><span>${escapeHtml(t(state, 'simulation.currentXp'))} <small>${escapeHtml(t(state, 'common.optional'))}</small></span><input class="input" id="current-xp" data-field="currentXp" type="number" min="0" max="${max}" value="${sim.currentXp || ''}" placeholder="${escapeHtml(t(state, 'simulation.currentXpHint', { max: formatNumber(max, state.language, 2) }))}"></label>
-    <label class="field" for="target-level"><span>${escapeHtml(t(state, 'simulation.targetLevel'))}</span><input class="input" id="target-level" data-field="targetLevel" type="number" min="1" max="${MAX_LEVEL}" value="${sim.targetLevel}" aria-invalid="${Boolean(editor.errors?.targetLevel)}">${fieldError(editor, 'targetLevel', state)}</label>
-    <label class="field" for="xp-bonus"><span>${escapeHtml(t(state, 'simulation.xpBonus'))}</span><div class="input-wrap"><input class="input" id="xp-bonus" data-field="xpBonusPercent" inputmode="decimal" type="number" min="0" max="1000" step="0.1" value="${bonus || ''}" placeholder="${escapeHtml(t(state, 'simulation.xpBonusExample'))}"><span class="suffix">%</span></div><small>${escapeHtml(t(state, 'simulation.xpBonusHelp'))}</small></label>
-  </div><div class="bonus-presets" aria-label="${escapeHtml(t(state, 'simulation.xpBonus'))}">${[0, 50, 100].map((value) => `<button type="button" class="button compact ${bonus === value ? 'gold' : 'secondary'}" data-action="set-xp-bonus" data-value="${value}">${value === 0 ? escapeHtml(t(state, 'simulation.noBonus')) : `+${value}%`}</button>`).join('')}</div>
-  <div class="xp-overview-grid"><div class="card section" style="background:var(--surface-blue)"><span class="eyebrow">${escapeHtml(t(state, 'simulation.requiredXp'))}</span><strong>${formatNumber(calc.xpNeeded, state.language, 2)} XP</strong><p class="muted">${escapeHtml(t(state, 'simulation.levelRange', { origin: sim.originLevel, target: sim.targetLevel }))}</p></div><div class="card section bonus-summary"><span class="eyebrow">${escapeHtml(t(state, 'simulation.activeXpBonus'))}</span><strong>${bonus > 0 ? `+${formatNumber(bonus, state.language, 1)}%` : escapeHtml(t(state, 'simulation.noBonus'))}</strong><p class="muted">${escapeHtml(t(state, 'simulation.rationEffectiveXp', { xp: formatNumber(calc.methods.vitaminizedFood.effectiveXpPerUnit, state.language, 2) }))}</p></div></div></div>`;
-}
-
-function methodQuantity(state, method, id) {
-  if (id === 'combined') return t(state, 'simulation.combinedQuantity', { resources: method.resourceQuantity, rations: method.rationQuantity });
-  return String(method.quantity);
-}
-
-function methodCard(state, sim, calc, id) {
-  const method = calc.methods[id];
-  const selected = (sim.upMethod === 'resources' ? 'combined' : sim.upMethod) === id;
-  const cheapest = calc.cheapest === id;
-  const name = t(state, `simulation.${methodKey[id]}`);
-  const copyIconName = id === 'vitaminizedFood' ? 'box' : id === 'kolitokenBag' ? 'coin' : 'list';
-  const effectiveUnit = method.effectiveXpPerUnit ? `<small class="muted">${escapeHtml(t(state, 'simulation.effectiveXpPerUnit', { xp: formatNumber(method.effectiveXpPerUnit, state.language, 2) }))}</small>` : '';
-  return `<div class="method-card-shell">${copyableIcon(name,copyIconName,t(state,'v303.copyItemName',{name}))}<button type="button" class="method-card ${selected ? 'selected' : ''} ${cheapest ? 'cheapest' : ''}" ${cheapest ? `data-cheapest="${escapeHtml(t(state, 'simulation.cheapest'))}"` : ''} data-action="select-method" data-method="${id}" aria-pressed="${selected}"><h3>${escapeHtml(name)}</h3>${effectiveUnit}<div class="method-stats"><div><span>${escapeHtml(t(state, 'simulation.quantityNeeded'))}</span><strong>${escapeHtml(methodQuantity(state, method, id))}</strong></div><div><span>${escapeHtml(t(state, 'simulation.xpObtained'))}</span><strong>${formatNumber(method.xpObtained, state.language, 2)} XP</strong></div><div><span>${escapeHtml(t(state, 'simulation.totalCost'))}</span><strong>${formatCompactKamas(method.totalCost, state.language)}</strong></div><div><span>${escapeHtml(t(state, 'simulation.costPerXp'))}</span><strong>${formatNumber(method.costPerXp, state.language, 2)} K</strong></div></div>${id === 'combined' ? `<small class="muted">${escapeHtml(t(state, 'simulation.combinedSummary', { resourceXp: formatNumber(method.resourceXp, state.language, 2), remainingXp: formatNumber(method.remainingXp, state.language, 2) }))}</small>` : ''}${!method.sufficient ? `<span class="badge red">${escapeHtml(t(state, 'simulation.insufficientXp'))}</span>` : ''}</button></div>`;
-}
-
-function catalogStatus(state) {
-  if (state.resourceCatalogStatus === 'loading') return `<span class="badge blue">${escapeHtml(t(state, 'simulation.resourceCatalogLoading'))}</span>`;
-  if (state.resourceCatalogStatus === 'ready') return `<span class="badge green">${escapeHtml(t(state, 'simulation.resourceCatalogReady', { count: state.resourceCatalog.length }))}</span>`;
-  return `<span class="badge red">${escapeHtml(t(state, 'simulation.resourceCatalogFallback'))}</span><button type="button" class="button compact secondary" data-action="refresh-resource-catalog">${escapeHtml(t(state, 'common.retry'))}</button>`;
-}
-
-function renderResourceLine(state, line) {
-  const catalogItem = findResourceCatalogItem(state.resourceCatalog, line);
-  const displayName = catalogItem?.name || line.resourceDisplayName || line.resourceName || line.canonicalName;
-  const imageUrl = catalogItem?.imageUrl || line.resourceImageUrl || '';
-  const xpCell = `<div class="resource-xp-input"><input class="input" type="number" min="0.0001" step="0.001" value="${line.baseXpUnit || ''}" data-resource-field="customXp" data-id="${line.id}" aria-label="${escapeHtml(t(state, 'simulation.unitXp'))}" placeholder="0"></div>`;
-  return `<tr><td><div class="resource-identity">${imageUrl ? copyableImage(imageUrl,displayName,'resource-line-thumb','/assets/placeholders/item-fallback.svg',t(state,'v303.copyItemName',{name:displayName})) : copyableIcon(displayName,'box',t(state,'v303.copyItemName',{name:displayName}))}<div><strong>${escapeHtml(displayName)}</strong><small>${catalogItem?.level ? `${escapeHtml(t(state, 'simulation.resourceLevel'))} ${catalogItem.level}` : escapeHtml(line.custom ? t(state, 'simulation.customResource') : t(state, 'simulation.dofusDudeResource'))}</small></div></div></td><td>${xpCell}</td><td><strong>${formatNumber(line.effectiveXpUnit, state.language, 3)}</strong><small class="muted resource-cell-note">${line.xpBonusPercent > 0 ? `+${formatNumber(line.xpBonusPercent, state.language, 1)}%` : escapeHtml(t(state, 'simulation.noBonus'))}</small></td><td><input class="input" style="min-width:90px" type="number" min="1" value="${line.quantity}" data-resource-field="quantity" data-id="${line.id}"></td><td><div class="needed-resource"><strong>${formatNumber(line.quantityNeededAlone, state.language)}</strong><button type="button" class="button compact secondary" data-action="fill-resource-required" data-id="${line.id}">${escapeHtml(t(state, 'simulation.useRequiredQuantity'))}</button></div></td><td>${formatNumber(line.xpTotal, state.language, 3)}</td><td><input class="input" style="min-width:120px" inputmode="numeric" value="${line.unitPrice}" data-resource-field="unitPrice" data-id="${line.id}"></td><td>${formatCompactKamas(line.costTotal, state.language)}</td><td><button class="icon-button" type="button" data-action="delete-resource" data-id="${line.id}" aria-label="${escapeHtml(t(state, 'common.delete'))}">${icon('trash', 17)}</button></td></tr>`;
-}
-
-function renderResourcePicker(state, editor) {
+export function resourceOptionsMarkup(state, editor) {
   const query = editor.resourceQuery || '';
-  const selected = editor.selectedResourceId && editor.selectedResourceId !== '__custom__'
-    ? findResourceCatalogItem(state.resourceCatalog, { resourceId: editor.selectedResourceId })
-    : null;
+  const used = new Set([String(RATION_ANKAMA_ID), ...(editor.simulation.foods || []).map(food => String(food.ankamaId))]);
   const filtered = searchResourceCatalog(state.resourceCatalog, query);
   const normalizedQuery = normalizeResourceText(query);
-  const hasExactMatch = filtered.some((item) => [item.name, item.canonicalName].some((name) => normalizeResourceText(name) === normalizedQuery));
-  const canAddCustom = Boolean(normalizedQuery) && !hasExactMatch;
-  const draft = editor.resourceDraft || { xp: 0, quantity: 1, unitPrice: 0, custom: false };
-  const displayValue = editor.resourceComboOpen ? query : (query || selected?.name || '');
+  const exact = filtered.some(item => [item.name, item.canonicalName].some(name => normalizeResourceText(name) === normalizedQuery));
+  const shown = filtered.slice(0, RESOURCE_RESULTS);
+  const custom = normalizedQuery && !exact ? `<button class="combobox-option custom-option" type="button" role="option" aria-selected="false" data-action="select-custom-resource"><span class="resource-option-placeholder">${icon('plus', 20)}</span><span><strong>${escapeHtml(t(state, 'simulation.addCustomResourceOption'))}</strong><small class="muted">${escapeHtml(query.trim())}</small></span></button>` : '';
+  const more = filtered.length > shown.length ? `<p class="small muted" style="padding:10px">${escapeHtml(t(state, 'pet.refineSearch', { count: formatNumber(filtered.length - shown.length, state.language) }))}</p>` : '';
+  const empty = !shown.length && !custom ? `<p class="small muted" style="padding:12px">${escapeHtml(t(state, 'common.noResults'))}</p>` : '';
+  return shown.map((item, index) => `<button class="combobox-option" type="button" role="option" aria-selected="false" data-action="select-resource" data-id="${escapeHtml(item.id)}" data-index="${index}">${item.imageUrl ? `<img src="${escapeHtml(item.imageUrl)}" alt="" loading="lazy" width="42" height="42" onerror="this.hidden=true">` : `<span class="resource-option-placeholder">${icon('box', 20)}</span>`}<span><strong>${escapeHtml(item.name)}</strong><small class="muted">${item.level ? `${escapeHtml(t(state, 'simulation.resourceLevel'))} ${item.level} · ` : ''}${used.has(String(item.ankamaId ?? '-')) ? escapeHtml(t(state, 'pet.alreadyListed')) : item.xp || getFeedingXp(item.ankamaId) ? `${formatNumber(item.xp || getFeedingXp(item.ankamaId), state.language, 3)} XP` : escapeHtml(t(state, 'simulation.xpNeedsInput'))}</small></span></button>`).join('') + custom + more + empty;
+}
 
-  return `<div class="resource-add unified-resource-add">
-    <div class="field resource-combobox"><label for="resource-search">${escapeHtml(t(state, 'simulation.resource'))}</label><div class="input-wrap"><input class="input" id="resource-search" data-resource-picker-search role="combobox" aria-expanded="${editor.resourceComboOpen ? 'true' : 'false'}" aria-controls="resource-options" aria-autocomplete="list" autocomplete="off" value="${escapeHtml(displayValue)}" placeholder="${escapeHtml(t(state, 'simulation.searchResourceHint'))}"><span class="suffix">${icon('search', 17)}</span></div>
-      ${editor.resourceComboOpen ? `<div class="combobox-list resource-combobox-list" id="resource-options" role="listbox">${filtered.map((item, index) => `<button class="combobox-option" type="button" role="option" aria-selected="${item.id === editor.selectedResourceId}" data-action="select-resource" data-id="${escapeHtml(item.id)}" data-index="${index}">${item.imageUrl ? `<img src="${escapeHtml(item.imageUrl)}" alt="" loading="lazy" width="42" height="42" onerror="this.hidden=true">` : `<span class="resource-option-placeholder">${icon('box', 20)}</span>`}<span><strong>${escapeHtml(item.name)}</strong><small class="muted">${item.level ? `${escapeHtml(t(state, 'simulation.resourceLevel'))} ${item.level} · ` : ''}${item.xp ? `${formatNumber(item.xp, state.language, 3)} XP` : escapeHtml(t(state, 'simulation.xpNeedsInput'))}</small></span></button>`).join('')}${canAddCustom ? `<button class="combobox-option custom-option" type="button" role="option" aria-selected="${editor.selectedResourceId === '__custom__'}" data-action="select-custom-resource"><span class="resource-option-placeholder">${icon('plus', 20)}</span><span><strong>${escapeHtml(t(state, 'simulation.addCustomResourceOption'))}</strong><small class="muted">${escapeHtml(query.trim())}</small></span></button>` : ''}${!filtered.length && !canAddCustom ? `<p class="small muted" style="padding:12px">${escapeHtml(t(state, 'common.noResults'))}</p>` : ''}</div>` : ''}
+function petCard(state, editor, calc) {
+  const sim = editor.simulation;
+  const selected = getCreatureById(sim.creatureId);
+  const name = selected ? getCreatureName(selected, state.language) : '';
+  const bonus = Number(sim.xpBonusPercent || 0);
+  const combobox = `<div class="field creature-combobox"><label for="creature-search">${escapeHtml(t(state, 'pet.which'))}</label><div class="input-wrap"><input class="input" id="creature-search" data-field="creatureQuery" role="combobox" aria-expanded="${Boolean(editor.comboOpen)}" aria-controls="creature-options" aria-autocomplete="list" autocomplete="off" value="${escapeHtml(editor.comboOpen ? (editor.creatureQuery || '') : name)}" placeholder="${escapeHtml(t(state, 'simulation.searchCreature'))}" aria-invalid="${Boolean(editor.errors?.creatureId)}"><span class="suffix">${icon('search', 17)}</span></div>${editor.comboOpen ? `<div class="combobox-list" id="creature-options" role="listbox">${creatureOptionsMarkup(state, editor)}</div>` : ''}${fieldError(editor, 'creatureId', state)}</div>`;
+  const extra = `<div class="form-grid"><label class="field" for="current-xp"><span>${escapeHtml(t(state, 'simulation.currentXp'))}</span><input class="input" id="current-xp" data-field="currentXp" type="number" min="0" max="${getLevelXpLimit(sim.originLevel)}" value="${sim.currentXp || ''}" placeholder="${escapeHtml(t(state, 'simulation.currentXpHint', { max: formatNumber(getLevelXpLimit(sim.originLevel), state.language) }))}"></label><label class="field" for="simulation-name"><span>${escapeHtml(t(state, 'simulation.simulationName'))}</span><input class="input" id="simulation-name" data-field="name" value="${escapeHtml(sim.name)}"><small>${escapeHtml(t(state, 'simulation.autoNameHint'))}</small></label></div>`;
+  return `<article class="card section stack-tight"><h2><span class="step-number">1</span>${escapeHtml(t(state, 'pet.sectionPet'))}</h2>
+    <div class="pet-picker">${selected ? copyableImage(selected.imageUrl, name, 'creature-thumb', '', t(state, 'v303.copyItemName', { name })) : `<span class="creature-thumb placeholder">${icon('heart', 26)}</span>`}${combobox}</div>
+    <div class="form-grid three">
+      <label class="field" for="origin-level"><span>${escapeHtml(t(state, 'pet.from'))}</span><input class="input" id="origin-level" data-field="originLevel" type="number" min="0" max="99" value="${sim.originLevel}" aria-invalid="${Boolean(editor.errors?.originLevel)}">${fieldError(editor, 'originLevel', state)}</label>
+      <label class="field" for="target-level"><span>${escapeHtml(t(state, 'pet.to'))}</span><input class="input" id="target-level" data-field="targetLevel" type="number" min="1" max="${MAX_LEVEL}" value="${sim.targetLevel}" aria-invalid="${Boolean(editor.errors?.targetLevel)}">${fieldError(editor, 'targetLevel', state)}</label>
+      <label class="field" for="xp-bonus"><span>${escapeHtml(t(state, 'simulation.xpBonus'))}</span><div class="input-wrap"><input class="input" id="xp-bonus" data-field="xpBonusPercent" inputmode="decimal" type="number" min="0" max="1000" step="0.1" value="${bonus || ''}" placeholder="0"><span class="suffix">%</span></div></label>
     </div>
-    <label class="field"><span>${escapeHtml(t(state, 'simulation.unitXp'))}</span><input class="input" data-resource-draft="xp" type="number" min="0.0001" step="0.001" value="${draft.xp || ''}" placeholder="0"></label>
-    <label class="field"><span>${escapeHtml(t(state, 'simulation.quantity'))}</span><input class="input" data-resource-draft="quantity" type="number" min="1" value="${draft.quantity || 1}"></label>
-    <label class="field"><span>${escapeHtml(t(state, 'simulation.unitPrice'))}</span><input class="input" data-resource-draft="unitPrice" inputmode="numeric" value="${draft.unitPrice || ''}" placeholder="0"></label>
-    <button class="button secondary" type="button" data-action="add-selected-resource">${icon('plus', 17)} ${escapeHtml(t(state, 'simulation.addResource'))}</button>
+    <p class="xp-needed">${escapeHtml(t(state, 'simulation.requiredXp'))}: <strong>${formatNumber(calc.xpNeeded, state.language)} XP</strong></p>
+    ${renderDisclosure(state, 'pet-more', t(state, 'ux.moreOptions'), extra, { open: Boolean(sim.currentXp) })}</article>`;
+}
+
+export function foodName(state, option) {
+  if (option.id === RATION) return t(state, 'simulation.marketFood');
+  if (option.id === BAG) return t(state, 'simulation.kolitokenBag');
+  if (option.id === KOLITOKENS) return t(state, 'pet.kolitokens');
+  return option.name;
+}
+
+function communityNote(state, sim, option) {
+  const community = state.petCommunity;
+  const ankamaId = foodAnkamaId(sim, option.id);
+  if (!state.account?.user || ankamaId == null || String(community.serverId) !== String(sim.serverId || state.account.user.serverId)) return '';
+  const entry = community.prices[ankamaId];
+  const status = community.sync[ankamaId];
+  const value = Math.round(Number(entry?.unitPrice) || 0);
+  const sync = status && status !== 'idle' ? `<span class="price-sync ${status}">${escapeHtml(t(state, `v310.prices.${{ saving: 'saving', saved: 'saved', error: 'saveError' }[status]}`))}</span>` : '';
+  if (!value) return `<span class="food-note">${escapeHtml(t(state, community.status === 'loading' ? 'common.loading' : 'pet.noCommunityPrice'))} ${sync}</span>`;
+  const line = { communityPriceFreshness: entry.freshness, communityPriceAgeDays: entry.ageDays, communityPriceRegisteredAt: entry.registeredAt };
+  const diff = option.price ? (option.price / value - 1) * 100 : 0;
+  const diffText = Math.abs(diff) >= 1 ? ` (${diff > 0 ? '+' : '−'}${formatNumber(Math.abs(diff), state.language, 0)}%)` : '';
+  const source = entry.isOwn || entry.source === 'PROPRIOS' ? 'v310.prices.ownSource' : 'v310.prices.communitySource';
+  return `<span class="food-note ${freshnessClass(line)}">${escapeHtml(t(state, source))}: <strong>${formatKamas(value, state.language)}</strong>${diffText} · ${escapeHtml(ageText(state, line))}${option.price !== value ? ` <button type="button" class="link-button" data-action="use-pet-community" data-id="${escapeHtml(option.id)}">${escapeHtml(t(state, 'pet.use'))}</button>` : ''} ${sync}</span>`;
+}
+
+const per500 = (state, option) => formatKamas(Math.ceil(option.price / option.xp * RATION_XP), state.language);
+
+function foodRow(state, sim, plan, option) {
+  const name = foodName(state, option);
+  const id = escapeHtml(option.id);
+  const isRation = [RATION, BAG, KOLITOKENS].includes(option.id);
+  const used = plan.parts.includes(option);
+  const copyLabel = t(state, 'v303.copyItemName', { name });
+  const ration = isRation ? state.resourceCatalog.find(item => Number(item.ankamaId) === RATION_ANKAMA_ID) : null;
+  const image = option.food?.imageUrl || (option.id === RATION ? ration?.imageUrl : '');
+  const thumb = image ? copyableImage(image, name, 'resource-line-thumb', '/assets/placeholders/item-fallback.svg', copyLabel) : copyableIcon(name, isRation && option.id !== RATION ? 'coin' : 'box', copyLabel);
+  const title = option.id === RATION ? t(state, 'pet.originMarket') : option.id === BAG ? t(state, 'pet.originBag') : option.id === KOLITOKENS ? t(state, 'pet.originKolitokens') : name;
+  const detail = option.id === BAG ? t(state, 'pet.bagDetail') : option.id === KOLITOKENS ? t(state, 'pet.kolitokensDetail') : `${formatNumber(option.xp, state.language, 3)} XP`;
+  const uncertain = Boolean(option.food) && isUncertainXp(option.food.ankamaId);
+  const editableXp = option.food && (option.food.custom || !option.food.xp || uncertain);
+  const other = uncertain ? alternativeXp(option.food.ankamaId) : 0;
+  // Numa combinação, quem só completa a sobra pode passar do teto e ainda compensar: ali o aviso confundiria.
+  const max = option.maxPrice >= 1 && !(used && option.price > option.maxPrice) ? `<span class="food-max ${option.price && option.price <= option.maxPrice ? 'positive' : option.price ? 'negative' : ''}">${escapeHtml(t(state, 'pet.worthUpTo', { value: formatKamas(option.maxPrice, state.language) }))}</span>` : '';
+  const number = (field, value, placeholder, label) => `<label class="field"><span>${escapeHtml(label)}</span><input class="input" type="number" min="0" step="1" inputmode="numeric" data-food-field="${field}" data-id="${id}" value="${value}" placeholder="${placeholder}"></label>`;
+  const owned = number('owned', option.owned || '', '0', t(state, 'pet.owned'));
+  const priceCell = option.id === KOLITOKENS ? '<span class="food-blank"></span>' : `<label class="field"><span>${escapeHtml(t(state, 'pet.unitPrice'))}</span>${kamasInput(`data-food-field="price" data-id="${id}" ${option.id === RATION ? 'data-price="ration"' : option.id === BAG ? 'data-price="bag"' : ''}`, option.price)}</label>`;
+  const buyCell = option.id === KOLITOKENS ? '<span class="food-blank"></span>' : number('buy', option.buy ?? '', option.buy === null ? formatNumber(option.buyQuantity, state.language) : '', t(state, 'pet.buy'));
+  const pin = option.id === KOLITOKENS || plan.pinnedId === option.id || option.buy !== null || !plan.remaining || (plan.parts.length === 1 && used) ? '' : `<button type="button" class="link-button" data-action="set-main-food" data-id="${id}">${escapeHtml(t(state, 'pet.completeWith'))}</button>`;
+  const remove = option.food ? `<button type="button" class="icon-button danger" data-action="remove-food" data-id="${id}" title="${escapeHtml(t(state, 'common.delete'))}" aria-label="${escapeHtml(`${t(state, 'common.delete')}: ${name}`)}">${icon('trash', 16)}</button>` : '';
+  const xpNote = uncertain ? `<span class="food-note warning">${escapeHtml(other && other !== option.xp ? t(state, 'pet.uncertainOther', { value: formatNumber(other, state.language, 3) }) : t(state, 'pet.uncertainHelp'))}</span>` : '';
+  const notes = [xpNote, option.id === KOLITOKENS ? '' : communityNote(state, sim, option), option.price && option.xp && option.id !== RATION ? `<span class="food-note">${escapeHtml(t(state, 'pet.per500', { value: per500(state, option) }))}</span>` : '', max, pin].filter(Boolean).join('');
+  return `<div class="food-row ${used ? 'selected' : ''}">
+    <div class="food-name">${thumb}<div><strong>${escapeHtml(title)}</strong>${editableXp ? `<label class="food-xp"><span>XP</span><input class="input" type="number" min="0" step="0.001" data-food-field="xp" data-id="${id}" value="${option.food.xp || ''}" placeholder="0"></label>` : `<small class="muted">${escapeHtml(detail)}</small>`}${used ? `<span class="badge green">${icon('check', 12)} ${escapeHtml(t(state, 'pet.inPlan'))}</span>` : ''}</div></div>
+    ${priceCell}${owned}${buyCell}
+    <div class="food-figure"><span>${escapeHtml(t(state, 'simulation.totalCost'))}</span><strong>${option.buyQuantity && option.price ? formatCompactKamas(option.cost, state.language) : '—'}</strong></div>
+    <div class="food-remove">${remove}</div>
+    ${notes ? `<div class="food-notes">${notes}</div>` : ''}
   </div>`;
 }
 
-function renderResourceEditor(state, editor, calc) {
-  const resources = calc.resources;
-  const coverage = calc.xpNeeded > 0 ? Math.min(100, resources.xpObtained / calc.xpNeeded * 100) : 100;
-  return `<div class="collapsible"><button type="button" class="collapsible-trigger" data-action="toggle-resources" aria-expanded="${editor.resourcesOpen}"><span><strong>${escapeHtml(t(state, 'simulation.resourcePanel'))}</strong><small class="muted" style="display:block">${escapeHtml(t(state, 'simulation.resourcesCount', { count: resources.lines.length }))} · ${escapeHtml(t(state, 'simulation.resourcesXp', { xp: formatNumber(resources.xpObtained, state.language, 2) }))} · ${formatCompactKamas(resources.totalCost, state.language)}</small></span>${icon(editor.resourcesOpen ? 'down' : 'chevron')}</button>${editor.resourcesOpen ? `<div class="collapsible-content stack">
-    <div class="resource-catalog-status">${catalogStatus(state)}</div>
-    <div class="resource-coverage"><div><span>${escapeHtml(t(state, 'simulation.resourceCoverage'))}</span><strong>${formatNumber(coverage, state.language, 1)}%</strong></div><div class="coverage-track"><span style="width:${coverage}%"></span></div><small>${escapeHtml(t(state, 'simulation.remainingXp'))}: ${formatNumber(resources.remainingXp, state.language, 2)} XP${resources.bonusXpObtained > 0 ? ` · ${escapeHtml(t(state, 'simulation.bonusXpGenerated', { xp: formatNumber(resources.bonusXpObtained, state.language, 2) }))}` : ''}</small></div>
-    ${renderResourcePicker(state, editor)}
-    <div data-resource-error class="error"></div><div class="table-wrap"><table class="resource-table expanded-resource-table"><thead><tr><th>${escapeHtml(t(state, 'simulation.resource'))}</th><th>${escapeHtml(t(state, 'simulation.unitXp'))}</th><th>${escapeHtml(t(state, 'simulation.effectiveXp'))}</th><th>${escapeHtml(t(state, 'simulation.quantity'))}</th><th>${escapeHtml(t(state, 'simulation.quantityToTarget'))}</th><th>${escapeHtml(t(state, 'simulation.totalXp'))}</th><th>${escapeHtml(t(state, 'simulation.unitPrice'))}</th><th>${escapeHtml(t(state, 'simulation.lineCost'))}</th><th>${escapeHtml(t(state, 'common.actions'))}</th></tr></thead><tbody>${resources.lines.length ? resources.lines.map((line) => renderResourceLine(state, line)).join('') : `<tr><td colspan="9" class="muted" style="text-align:center;padding:24px">${escapeHtml(t(state, 'common.noResults'))}</td></tr>`}</tbody></table></div><div class="resource-summary"><span>${escapeHtml(t(state, 'simulation.quantity'))}: <strong>${resources.quantity}</strong></span><span>${escapeHtml(t(state, 'simulation.totalXp'))}: <strong>${formatNumber(resources.xpObtained, state.language, 2)}</strong></span><span>${escapeHtml(t(state, 'simulation.totalCost'))}: <strong>${formatCompactKamas(resources.totalCost, state.language)}</strong></span><span>${escapeHtml(t(state, 'simulation.averageCostXp'))}: <strong>${formatNumber(resources.costPerXp, state.language, 2)} K</strong></span></div></div>` : ''}</div>`;
+function suggestions(state, sim, plan) {
+  const community = state.petCommunity;
+  const logged = Boolean(state.account?.user);
+  const sameServer = !logged || String(community.serverId) === String(sim.serverId || state.account.user.serverId);
+  const excluded = new Set((sim.foods || []).map(food => String(food.ankamaId)));
+  const rows = rankKnownFoods(state.resourceCatalog, state.petPrices, sameServer ? community : { prices: {} }, excluded).slice(0, 5);
+  const scan = !logged ? `<p class="muted small">${escapeHtml(t(state, 'pet.scanLogin'))} <button type="button" class="link-button" data-action="route" data-route="login">${escapeHtml(t(state, 'v310.account.enter'))}</button></p>` : scanButton(state);
+  const list = rows.map(item => `<li><img src="${escapeHtml(item.imageUrl)}" alt="" width="34" height="34" loading="lazy" onerror="this.hidden=true"><span><strong>${escapeHtml(item.name)}</strong><small class="muted">${formatKamas(item.price, state.language)} · ${formatNumber(item.xp, state.language, 3)} XP · ${escapeHtml(t(state, 'pet.per500', { value: formatKamas(Math.ceil(item.per500), state.language) }))}${item.shared ? ` · ${escapeHtml(ageText(state, { communityPriceAgeDays: item.shared.ageDays, communityPriceRegisteredAt: item.shared.registeredAt }))}` : ''}</small></span><button type="button" class="button ghost compact" data-action="select-resource" data-id="${escapeHtml(item.id)}">${icon('plus', 14)} ${escapeHtml(t(state, 'pet.add'))}</button></li>`).join('');
+  return `<div class="food-suggestions"><h3>${escapeHtml(t(state, 'pet.cheapestKnown'))}</h3>${list ? `<ul>${list}</ul>` : `<p class="muted small">${escapeHtml(t(state, 'pet.cheapestEmpty'))}</p>`}${scan}</div>`;
 }
 
-function renderCombinedConfigurator(state, sim, calc) {
-  if ((sim.upMethod === 'resources' ? 'combined' : sim.upMethod) !== 'combined') return '';
-  const method = calc.methods.combined;
-  return `<section class="combined-config card section"><div><span class="eyebrow">${escapeHtml(t(state, 'simulation.combined'))}</span><h3>${escapeHtml(t(state, 'simulation.combinedHelpTitle'))}</h3><p class="muted small">${escapeHtml(t(state, 'simulation.combinedHelp'))}</p></div><div class="combined-flow"><div><span>${escapeHtml(t(state, 'simulation.resources'))}</span><strong>${formatNumber(method.resourceXp, state.language, 2)} XP</strong><small>${formatNumber(method.resourceQuantity, state.language)} ${escapeHtml(t(state, 'simulation.resourceUnits'))}</small></div><span class="flow-arrow">+</span><div><span>${escapeHtml(t(state, 'simulation.rationComplement'))}</span><strong>${formatNumber(method.rationQuantity, state.language)} ${escapeHtml(t(state, 'simulation.rationUnits'))}</strong><small>${formatNumber(method.remainingXp, state.language, 2)} XP</small></div><span class="flow-arrow">=</span><div><span>${escapeHtml(t(state, 'simulation.xpObtained'))}</span><strong>${formatNumber(method.xpObtained, state.language, 2)} XP</strong><small>${formatCompactKamas(method.totalCost, state.language)}</small></div></div><fieldset class="field"><legend>${escapeHtml(t(state, 'simulation.complementSource'))}</legend><div class="grid-2"><label class="compact-choice ${sim.combinedRationSource === 'vitaminizedFood' ? 'selected' : ''}"><input type="radio" name="combined-source" data-field="combinedRationSource" value="vitaminizedFood" ${sim.combinedRationSource === 'vitaminizedFood' ? 'checked' : ''}><strong>${escapeHtml(t(state, 'simulation.marketFood'))}</strong></label><label class="compact-choice ${sim.combinedRationSource === 'kolitokenBag' ? 'selected' : ''}"><input type="radio" name="combined-source" data-field="combinedRationSource" value="kolitokenBag" ${sim.combinedRationSource === 'kolitokenBag' ? 'checked' : ''}><strong>${escapeHtml(t(state, 'simulation.kolitokenBag'))}</strong></label></div></fieldset></section>`;
+export function scanButton(state) {
+  const { scan, progress } = state.petCommunity;
+  return `<button type="button" class="button secondary compact" data-action="scan-pet-prices" ${scan === 'loading' ? 'disabled' : ''}>${icon('refresh', 15)} ${escapeHtml(t(state, scan === 'loading' ? 'pet.scanning' : 'pet.scan'))} ${scan === 'loading' ? `<span data-scan-progress>${progress}%</span>` : ''}</button>`;
 }
 
-function renderMethodStep(state, editor, calc) {
+function foodCard(state, editor, calc) {
+  const { plan } = calc;
   const sim = editor.simulation;
-  const selectedMethod = sim.upMethod === 'resources' ? 'combined' : sim.upMethod;
-  return `<div class="stack"><div class="bonus-inline"><span class="badge ${calc.xpBonusPercent > 0 ? 'green' : 'blue'}">${escapeHtml(t(state, 'simulation.activeBonusBadge', { bonus: formatNumber(calc.xpBonusPercent, state.language, 1) }))}</span><p class="muted small">${escapeHtml(t(state, 'simulation.bonusAppliesAll'))}</p></div><p class="muted">${escapeHtml(t(state, 'simulation.chooseMethod'))}</p><div class="form-grid"><label class="field"><span>${escapeHtml(t(state, 'simulation.marketFoodPrice'))}</span><div class="input-wrap"><input class="input" data-field="marketFoodPrice" inputmode="numeric" value="${sim.marketFoodPrice || ''}" placeholder="0"><span class="suffix">K</span></div></label><label class="field"><span>${escapeHtml(t(state, 'simulation.bagPrice'))}</span><div class="input-wrap"><input class="input" data-field="bagPrice" inputmode="numeric" value="${sim.bagPrice || ''}" placeholder="0"><span class="suffix">K</span></div></label></div><div class="method-grid">${['vitaminizedFood', 'kolitokenBag', 'combined'].map((id) => methodCard(state, { ...sim, upMethod: selectedMethod }, calc, id)).join('')}</div>${fieldError(editor, 'upMethod', state)}${fieldError(editor, 'marketFoodPrice', state)}${fieldError(editor, 'bagPrice', state)}${fieldError(editor, 'resources', state)}${renderCombinedConfigurator(state, sim, calc)}${selectedMethod === 'combined' ? renderResourceEditor(state, editor, calc) : ''}</div>`;
+  const picker = `<div class="field resource-combobox"><label for="resource-search">${escapeHtml(t(state, 'pet.addResource'))}</label><div class="input-wrap"><input class="input" id="resource-search" data-resource-picker-search role="combobox" aria-expanded="${Boolean(editor.resourceComboOpen)}" aria-controls="resource-options" aria-autocomplete="list" autocomplete="off" value="${escapeHtml(editor.resourceQuery || '')}" placeholder="${escapeHtml(t(state, 'pet.addResourceHint'))}"><span class="suffix">${icon('search', 17)}</span></div>${editor.resourceComboOpen ? `<div class="combobox-list resource-combobox-list" id="resource-options" role="listbox">${resourceOptionsMarkup(state, editor)}</div>` : ''}</div>`;
+  const offline = state.resourceCatalogStatus === 'fallback' ? `<div class="resource-catalog-status"><span class="badge red">${escapeHtml(t(state, 'simulation.resourceCatalogFallback'))}</span><button type="button" class="button compact secondary" data-action="refresh-resource-catalog">${escapeHtml(t(state, 'common.retry'))}</button></div>` : '';
+  const rows = options => options.map(option => foodRow(state, sim, plan, option)).join('');
+  const rations = plan.options.filter(option => [RATION, BAG, KOLITOKENS].includes(option.id));
+  const resources = plan.options.filter(option => option.food);
+  return `<article class="card section stack-tight"><div class="section-head"><h2><span class="step-number">2</span>${escapeHtml(t(state, 'pet.sectionFood'))}</h2>${plan.isAuto ? '' : `<button type="button" class="button ghost compact" data-action="set-auto-food">${escapeHtml(t(state, 'pet.backToAuto'))}</button>`}</div>
+    <p class="muted small">${escapeHtml(t(state, 'pet.foodHelp'))}</p>
+    ${state.account?.user ? renderCraftServerContext(state, sim) : ''}
+    <div class="food-group"><h3>${escapeHtml(t(state, 'simulation.marketFood'))} <small class="muted">${escapeHtml(t(state, 'pet.rationGroup'))}</small></h3><div class="food-list">${rows(rations)}</div></div>
+    <div class="food-group"><h3>${escapeHtml(t(state, 'pet.resourceGroup'))}</h3>${resources.length ? `<div class="food-list">${rows(resources)}</div>` : ''}${offline}${picker}</div>
+    ${suggestions(state, sim, plan)}</article>`;
 }
 
-function renderCostsStep(state, editor, calc) {
+function tradeCard(state, editor) {
   const sim = editor.simulation;
-  return `<div class="stack"><div class="form-grid three"><label class="field"><span>${escapeHtml(t(state, 'simulation.originCost'))}</span><div class="input-wrap"><input class="input" data-field="originCost" inputmode="numeric" value="${sim.originCost || ''}" aria-invalid="${Boolean(editor.errors?.originCost)}"><span class="suffix">K</span></div>${fieldError(editor, 'originCost', state)}</label><label class="field"><span>${escapeHtml(t(state, 'simulation.additionalCosts'))} <small>${escapeHtml(t(state, 'common.optional'))}</small></span><div class="input-wrap"><input class="input" data-field="additionalCosts" inputmode="numeric" value="${sim.additionalCosts || ''}"><span class="suffix">K</span></div></label><label class="field"><span>${escapeHtml(t(state, 'simulation.salePrice'))}</span><div class="input-wrap"><input class="input" data-field="estimatedSalePrice" inputmode="numeric" value="${sim.estimatedSalePrice || ''}" aria-invalid="${Boolean(editor.errors?.estimatedSalePrice)}"><span class="suffix">K</span></div>${fieldError(editor, 'estimatedSalePrice', state)}</label></div><fieldset class="field"><legend>${escapeHtml(t(state, 'simulation.saleChannel'))}</legend><div class="grid-2"><label class="method-card ${sim.estimatedSaleChannel === 'Mercado HDV' ? 'selected' : ''}"><input type="radio" name="sale-channel" data-field="estimatedSaleChannel" value="Mercado HDV" ${sim.estimatedSaleChannel === 'Mercado HDV' ? 'checked' : ''}><strong>${escapeHtml(t(state, 'simulation.marketChannel'))}</strong><span class="muted small">2%</span></label><label class="method-card ${sim.estimatedSaleChannel === 'Outro Jogador' ? 'selected' : ''}"><input type="radio" name="sale-channel" data-field="estimatedSaleChannel" value="Outro Jogador" ${sim.estimatedSaleChannel === 'Outro Jogador' ? 'checked' : ''}><strong>${escapeHtml(t(state, 'simulation.playerChannel'))}</strong><span class="muted small">${escapeHtml(t(state, 'simulation.noFee'))}</span></label></div></fieldset><div class="kpis"><article class="card kpi"><span>${escapeHtml(t(state, 'simulation.upCost'))}</span><strong>${formatCompactKamas(calc.upCost, state.language)}</strong></article><article class="card kpi"><span>${escapeHtml(t(state, 'simulation.operationCost'))}</span><strong>${formatCompactKamas(calc.operationCost, state.language)}</strong></article>${calc.fee ? `<article class="card kpi"><span>${escapeHtml(t(state, 'simulation.marketFee'))}</span><strong>${formatCompactKamas(calc.fee, state.language)}</strong></article>` : ''}<article class="card kpi"><span>${escapeHtml(t(state, 'simulation.estimatedProfit'))}</span><strong class="${calc.estimatedProfit > 0 ? 'positive' : calc.estimatedProfit < 0 ? 'negative' : 'zero'}">${formatCompactKamas(calc.estimatedProfit, state.language)}</strong></article></div></div>`;
+  const channel = (value, key) => `<option value="${value}" ${sim.estimatedSaleChannel === value ? 'selected' : ''}>${escapeHtml(t(state, key))}</option>`;
+  return `<article class="card section stack-tight"><h2><span class="step-number">3</span>${escapeHtml(t(state, 'pet.sectionTrade'))}</h2><div class="form-grid">
+    <label class="field"><span>${escapeHtml(t(state, 'simulation.originCost'))}</span>${kamasInput('data-field="originCost"', sim.originCost)}</label>
+    <label class="field"><span>${escapeHtml(t(state, 'simulation.salePrice'))}</span>${kamasInput('data-field="estimatedSalePrice"', sim.estimatedSalePrice)}</label>
+    <label class="field"><span>${escapeHtml(t(state, 'simulation.saleChannel'))}</span><select class="select" data-field="estimatedSaleChannel">${channel('Mercado HDV', 'pet.hdvFee')}${channel('Outro Jogador', 'pet.playerNoFee')}</select></label>
+    <label class="field"><span>${escapeHtml(t(state, 'simulation.additionalCosts'))} <small>${escapeHtml(t(state, 'common.optional'))}</small></span>${kamasInput('data-field="additionalCosts"', sim.additionalCosts)}</label>
+  </div></article>`;
 }
 
-function selectedQuantityText(state, calc, method) {
-  if (method === 'vitaminizedFood') return t(state, 'simulation.rationsRequired', { count: calc.methods.vitaminizedFood.quantity });
-  if (method === 'kolitokenBag') return t(state, 'simulation.bagsAndRationsRequired', { bags: calc.methods.kolitokenBag.quantity, rations: calc.methods.kolitokenBag.rationQuantity });
-  if (method === 'resources' || method === 'combined') return t(state, 'simulation.combinedQuantity', { resources: calc.methods.combined.resourceQuantity, rations: calc.methods.combined.rationQuantity });
-  return '—';
-}
-
-function renderReviewStep(state, editor, calc) {
+// Também usado sozinho durante a digitação, sem recriar o campo ativo.
+export function petSummaryMarkup(state, editor = state.simulationEditor) {
   const sim = editor.simulation;
-  const creature = getCreatureById(sim.creatureId);
-  const method = sim.upMethod === 'resources' ? 'combined' : sim.upMethod;
-  return `<div class="review-grid">${copyableImage(creature?.imageUrl, creature ? getCreatureName(creature, state.language) : sim.creatureCanonicalName, 'creature-thumb large', '', t(state,'v303.copyItemName',{name:creature ? getCreatureName(creature,state.language) : sim.creatureCanonicalName}))}<div><span class="eyebrow">${escapeHtml(t(state, 'simulation.steps.review'))}</span><h2>${escapeHtml(sim.name || `${creature?.canonicalName || ''} — ${t(state, 'simulation.levelRange', { origin: sim.originLevel, target: sim.targetLevel })}`)}</h2><p class="muted">${escapeHtml(t(state, `simulation.${methodKey[method]}`))}</p><div class="review-values" style="margin-top:16px"><div class="metric"><span>${escapeHtml(t(state, 'simulation.requiredXp'))}</span><strong>${formatNumber(calc.xpNeeded, state.language, 2)} XP</strong></div><div class="metric"><span>${escapeHtml(t(state, 'simulation.xpBonus'))}</span><strong>${calc.xpBonusPercent > 0 ? `+${formatNumber(calc.xpBonusPercent, state.language, 1)}%` : escapeHtml(t(state, 'simulation.noBonus'))}</strong></div><div class="metric"><span>${escapeHtml(t(state, 'simulation.quantityNeeded'))}</span><strong>${escapeHtml(selectedQuantityText(state, calc, method))}</strong></div><div class="metric"><span>${escapeHtml(t(state, 'simulation.upCost'))}</span><strong>${formatCompactKamas(calc.upCost, state.language)}</strong></div><div class="metric"><span>${escapeHtml(t(state, 'simulation.operationCost'))}</span><strong>${formatCompactKamas(calc.operationCost, state.language)}</strong></div><div class="metric"><span>${escapeHtml(t(state, 'simulation.salePrice'))}</span><strong>${formatCompactKamas(calc.salePrice, state.language)}</strong></div>${calc.fee ? `<div class="metric"><span>${escapeHtml(t(state, 'simulation.marketFee'))}</span><strong>${formatCompactKamas(calc.fee, state.language)}</strong></div>` : ''}<div class="metric"><span>${escapeHtml(t(state, 'simulation.estimatedProfit'))}</span><strong class="${calc.estimatedProfit >= 0 ? 'positive' : 'negative'}">${formatCompactKamas(calc.estimatedProfit, state.language)}</strong></div></div></div></div>`;
+  const calc = calculateSimulation(sim);
+  const { plan } = calc;
+  const line = (label, value, cls = '') => `<div><dt>${escapeHtml(label)}</dt><dd class="${cls}">${value}</dd></div>`;
+  const kamas = value => formatKamas(value, state.language);
+  const shopping = plan.parts.flatMap(option => {
+    const name = foodName(state, option);
+    const item = (quantity, label, cost) => `<li><span>${escapeHtml(label)}</span><strong>${formatNumber(quantity, state.language)} × ${escapeHtml(name)}</strong>${cost ? `<small>${cost}</small>` : ''}</li>`;
+    return [option.ownedUsed ? item(option.ownedUsed, t(state, 'pet.useOwned')) : '', option.buyQuantity ? item(option.buyQuantity, t(state, 'pet.buy'), option.price ? kamas(option.cost) : '') : ''].filter(Boolean);
+  });
+  const hasSale = calc.salePrice > 0;
+  const spare = plan.parts.find(option => option.leftover > 0)?.leftover;
+  const leftover = spare ? `<small class="muted">${escapeHtml(t(state, 'pet.leftover', { count: formatNumber(spare, state.language) }))}</small>` : '';
+  const buy = plan.complete && shopping.length
+    ? `<ul class="shopping-list">${shopping.join('')}</ul>${leftover}`
+    : plan.complete ? '' : `<div class="notice warning">${escapeHtml(t(state, 'pet.missingFoodPrice'))}</div>`;
+  return `<span class="eyebrow">${escapeHtml(t(state, 'pet.result'))}</span>
+    <div class="result-hero"><span>${escapeHtml(t(state, 'simulation.estimatedProfit'))}</span><strong class="${!hasSale || !plan.complete ? '' : calc.estimatedProfit >= 0 ? 'positive' : 'negative'}">${hasSale && plan.complete ? kamas(calc.estimatedProfit) : '—'}</strong></div>
+    ${buy}
+    ${plan.extraCost > 0 ? `<div class="notice warning">${escapeHtml(t(state, 'pet.extraCost', { value: kamas(plan.extraCost), name: plan.bestIds.map(id => foodName(state, plan.options.find(option => option.id === id))).join(' + ') }))}</div>` : ''}
+    ${plan.missingPrice.length ? `<div class="notice warning">${escapeHtml(t(state, 'pet.missingBuyPrice', { name: plan.missingPrice.map(id => foodName(state, plan.options.find(option => option.id === id))).join(', ') }))}</div>` : ''}
+    <dl class="summary-list">${line(t(state, 'simulation.upCost'), plan.complete ? kamas(calc.upCost) : '—')}${line(t(state, 'simulation.originCost'), kamas(calc.originCost))}${calc.additionalCosts ? line(t(state, 'simulation.additionalCosts'), kamas(calc.additionalCosts)) : ''}${line(t(state, 'simulation.operationCost'), plan.complete ? kamas(calc.operationCost) : '—')}${calc.fee ? line(t(state, 'simulation.marketFee'), kamas(calc.fee)) : ''}${line(t(state, 'pet.breakEven'), plan.complete ? kamas(calc.breakEven) : '—')}</dl>`;
 }
 
 export function renderSimulationEditor(state) {
   const editor = state.simulationEditor;
   const calc = calculateSimulation(editor.simulation);
   const title = editor.mode === 'edit' ? 'editTitle' : editor.mode === 'duplicate' ? 'duplicateTitle' : 'newTitle';
-  const bodies = [renderCreatureStep, renderLevelsStep, renderMethodStep, renderCostsStep, renderReviewStep];
-  return `<section class="editor-shell"><div class="section-head"><div><span class="eyebrow">${escapeHtml(t(state, 'simulation.stepLabel', { current: editor.step, total: 5 }))}</span><h1>${escapeHtml(t(state, `simulation.${title}`))}</h1></div><button class="button secondary" data-action="exit-editor">${icon('close', 17)} ${escapeHtml(t(state, 'common.cancel'))}</button></div>${renderStepper(state, editor)}<div class="card editor-panel">${bodies[editor.step - 1](state, editor, calc)}<div class="editor-nav"><button class="button secondary" data-action="prev-step" ${editor.step === 1 ? 'disabled' : ''}>${icon('back', 17)} ${escapeHtml(t(state, 'common.back'))}</button>${editor.step < 5 ? `<button class="button primary" data-action="next-step">${escapeHtml(editor.step === 4 ? t(state, 'simulation.reviewSimulation') : t(state, 'common.continue'))} ${icon('chevron', 17)}</button>` : `<button class="button primary" data-action="save-simulation">${icon('check', 17)} ${escapeHtml(editor.mode === 'edit' ? t(state, 'simulation.updateSimulation') : t(state, 'simulation.saveSimulation'))}</button>`}</div></div></section>`;
+  return `<section class="stack"><div class="section-head"><h1>${escapeHtml(t(state, `simulation.${title}`))}</h1><button class="button ghost" data-action="exit-editor">${icon('back', 17)} ${escapeHtml(t(state, 'common.back'))}</button></div>
+    <div class="craft-editor-layout"><div class="stack">${petCard(state, editor, calc)}${foodCard(state, editor, calc)}${tradeCard(state, editor)}</div>
+    <aside class="sticky craft-summary"><article class="card section"><div data-pet-summary>${petSummaryMarkup(state, editor)}</div><div class="stack-actions"><button class="button primary" data-action="save-simulation">${icon('check', 17)} ${escapeHtml(t(state, editor.mode === 'edit' ? 'simulation.updateSimulation' : 'simulation.saveSimulation'))}</button></div></article></aside></div></section>`;
 }

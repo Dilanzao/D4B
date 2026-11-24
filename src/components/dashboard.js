@@ -1,11 +1,14 @@
-import Chart from 'chart.js/auto';
+// Os gráficos são carregados sob demanda: só o painel de pets precisa deles.
+const loadChartLibrary = () => import('chart.js/auto');
+let Chart = null;
 import { getCreatureById, getCreatureName } from '../data/creatures.js';
 import { formatCompactKamas, formatKamas, formatNumber } from '../utils/currency.js';
 import { adSlot, escapeHtml, icon, t } from './common.js';
+import { moreFiltersLabel, renderDisclosure, renderPageHead } from './pageLayout.js';
 import { renderSimulationGallery } from './simulationGallery.js';
 
 const charts = new Map();
-const methodKeys = { vitaminizedFood:'marketFood', kolitokenBag:'kolitokenBag', resources:'combined', combined:'combined' };
+const methodKeys = { vitaminizedFood:'marketFood', kolitokenBag:'kolitokenBag', resources:'combined', combined:'combined', resource:'singleResource' };
 const reduceMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
 function startOfDay(date) { const copy=new Date(date); copy.setHours(0,0,0,0); return copy; }
@@ -91,7 +94,8 @@ function selectOptions(state, values, selected, allLabel, labeler=value=>value) 
 }
 
 function kpi(state,label,value,full,note='') { return `<article class="card kpi dashboard-kpi" title="${escapeHtml(full)}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong>${note?`<small>${escapeHtml(note)}</small>`:''}</article>`; }
-function chartCard(state,id,title,summary,secondary=false) { const content=`<div class="chart-wrap"><canvas id="${id}" role="img" aria-describedby="${id}-summary" aria-label="${escapeHtml(title)}"></canvas></div><p class="visually-hidden" id="${id}-summary">${escapeHtml(summary)}</p>`; return secondary?`<details class="card chart-card secondary-chart" open><summary class="chart-head"><h3>${escapeHtml(title)}</h3><span aria-hidden="true">⌄</span></summary>${content}</details>`:`<article class="card chart-card"><div class="chart-head"><h3>${escapeHtml(title)}</h3></div>${content}</article>`; }
+function chartCard(id,title,summary,control='') { return `<article class="card chart-card"><div class="chart-head"><h3>${escapeHtml(title)}</h3>${control}</div><div class="chart-wrap"><canvas id="${id}" role="img" aria-describedby="${id}-summary" aria-label="${escapeHtml(title)}"></canvas></div><p class="visually-hidden" id="${id}-summary">${escapeHtml(summary)}</p></article>`; }
+function chartMetric(state,field,labelKey,values) { const selected=state.dashboardFilters?.[field]; return `<select class="select" style="width:auto" data-dashboard-filter="${field}" aria-label="${escapeHtml(t(state,labelKey))}">${values.map(v=>`<option value="${v}" ${selected===v?'selected':''}>${escapeHtml(t(state,`dashboard.${v}`))}</option>`).join('')}</select>`; }
 
 export function renderDashboard(state) {
   const f=state.dashboardFilters||{};
@@ -99,25 +103,25 @@ export function renderDashboard(state) {
   const stats=statistics(sales,state);
   const creatures=[...new Map(state.sales.map(s=>[s.creatureId,s])).values()].filter(x=>x.creatureId);
   const methods=[...new Set(state.sales.map(s=>s.upMethod).filter(Boolean))];
-  const hero=`<div class="card hero compact-hero"><div><span class="eyebrow">${escapeHtml(t(state,'home.eyebrow'))}</span><h1>${escapeHtml(t(state,'home.title'))}</h1><p>${escapeHtml(t(state,'home.description'))}</p><div class="hero-actions"><button class="button primary compact" data-action="new-simulation">${icon('plus',17)} ${escapeHtml(state.simulations.length?t(state,'home.newSimulation'):t(state,'home.firstButton'))}</button><button class="button secondary compact" data-action="open-information" data-section="how">${icon('details',17)} ${escapeHtml(t(state,'nav.guide'))}</button></div></div><img class="hero-logo" src="/assets/brand/logo-header.webp" alt="Dofus4Business"></div>`;
-  const simulations=`<div class="section-head compact-head"><div><span class="eyebrow">${escapeHtml(t(state,'home.recentSimulations'))}</span><h2>${escapeHtml(t(state,'home.recentSimulations'))}</h2></div><div class="button-row"><button class="button secondary compact" data-action="new-simulation">${icon('plus',16)} ${escapeHtml(t(state,'home.newSimulation'))}</button>${state.simulations.length>4?`<button class="button ghost compact" data-action="navigate" data-view="simulations">${escapeHtml(t(state,'home.viewAll'))}</button>`:''}</div></div>${renderSimulationGallery(state,{limit:4})}`;
-  const filterPanel=`<article class="card section dashboard-filter-card"><div class="section-head compact-head"><div><span class="eyebrow">${escapeHtml(t(state,'dashboard.filters'))}</span><h2>${escapeHtml(t(state,'dashboard.title'))}</h2><p>${escapeHtml(t(state,'dashboard.description'))}</p></div></div><div class="dashboard-filters">
-    <label class="field"><span>${escapeHtml(t(state,'dashboard.period'))}</span><select class="select" data-dashboard-filter="period">${[['7','sevenDays'],['30','thirtyDays'],['90','ninetyDays'],['year','currentYear'],['all','allTime'],['custom','custom']].map(([value,key])=>`<option value="${value}" ${f.period===value?'selected':''}>${escapeHtml(t(state,`dashboard.${key}`))}</option>`).join('')}</select></label>
-    <label class="field"><span>${escapeHtml(t(state,'dashboard.from'))}</span><input class="input" type="date" data-dashboard-filter="from" value="${escapeHtml(f.from||'')}" ${f.period!=='custom'?'disabled':''}></label>
-    <label class="field"><span>${escapeHtml(t(state,'dashboard.to'))}</span><input class="input" type="date" data-dashboard-filter="to" value="${escapeHtml(f.to||'')}" ${f.period!=='custom'?'disabled':''}></label>
+  const hero=renderPageHead(state,{title:t(state,'v3.modules.pets.title'),tabs:'pets',actions:`<button class="button primary" data-action="new-simulation">${icon('plus',17)} ${escapeHtml(state.simulations.length?t(state,'home.newSimulation'):t(state,'home.firstButton'))}</button>`});
+  const simulations=state.simulations.length?`<div class="section-head"><h2>${escapeHtml(t(state,'home.recentSimulations'))}</h2>${state.simulations.length>4?`<button class="button ghost compact" data-action="navigate" data-view="simulations">${escapeHtml(t(state,'home.viewAll'))}</button>`:''}</div>${renderSimulationGallery(state,{limit:4})}`:renderSimulationGallery(state,{limit:4});
+  const extraCount=['type','creature','channel','method','result'].filter(key=>f[key]&&f[key]!=='all').length;
+  const extraFilters=`<div class="filters-grid">
     <label class="field"><span>${escapeHtml(t(state,'dashboard.type'))}</span><select class="select" data-dashboard-filter="type">${selectOptions(state,['Mascote','Montascote'],f.type,t(state,'dashboard.all'),v=>v==='Mascote'?t(state,'simulation.pet'):t(state,'simulation.petsmount'))}</select></label>
     <label class="field"><span>${escapeHtml(t(state,'dashboard.creature'))}</span><select class="select" data-dashboard-filter="creature">${selectOptions(state,creatures.map(x=>x.creatureId),f.creature,t(state,'dashboard.all'),id=>{const sale=creatures.find(x=>x.creatureId===id);const c=getCreatureById(id);return getCreatureName(c,state.language)||sale?.creatureCanonicalName||id;})}</select></label>
     <label class="field"><span>${escapeHtml(t(state,'dashboard.channel'))}</span><select class="select" data-dashboard-filter="channel">${selectOptions(state,['Mercado HDV','Outro Jogador'],f.channel,t(state,'dashboard.all'),v=>v==='Mercado HDV'?t(state,'simulation.marketChannel'):t(state,'simulation.playerChannel'))}</select></label>
     <label class="field"><span>${escapeHtml(t(state,'dashboard.method'))}</span><select class="select" data-dashboard-filter="method">${selectOptions(state,methods,f.method,t(state,'dashboard.all'),v=>t(state,`simulation.${methodKeys[v]||'resources'}`))}</select></label>
     <label class="field"><span>${escapeHtml(t(state,'dashboard.result'))}</span><select class="select" data-dashboard-filter="result">${selectOptions(state,['profit','loss'],f.result,t(state,'dashboard.all'),v=>v==='profit'?t(state,'dashboard.positive'):t(state,'dashboard.negative'))}</select></label>
+  </div>`;
+  const dateField=(name,key)=>`<label class="field"><span>${escapeHtml(t(state,key))}</span><input class="input" type="date" data-dashboard-filter="${name}" value="${escapeHtml(f[name]||'')}"></label>`;
+  const filterPanel=!state.sales.length?'':`<div><div class="section-head"><h2>${escapeHtml(t(state,'ux.salesResults'))}</h2></div><div class="filters-row" style="margin-top:12px">
+    <label class="field"><span>${escapeHtml(t(state,'dashboard.period'))}</span><select class="select" data-dashboard-filter="period">${[['7','sevenDays'],['30','thirtyDays'],['90','ninetyDays'],['year','currentYear'],['all','allTime'],['custom','custom']].map(([value,key])=>`<option value="${value}" ${f.period===value?'selected':''}>${escapeHtml(t(state,`dashboard.${key}`))}</option>`).join('')}</select></label>
+    ${f.period==='custom'?`${dateField('from','dashboard.from')}${dateField('to','dashboard.to')}`:''}
     <label class="field"><span>${escapeHtml(t(state,'dashboard.grouping'))}</span><select class="select" data-dashboard-filter="grouping">${['day','week','month'].map(v=>`<option value="${v}" ${f.grouping===v?'selected':''}>${escapeHtml(t(state,`dashboard.${v}`))}</option>`).join('')}</select></label>
-    <label class="field"><span>${escapeHtml(t(state,'dashboard.typeMetricLabel'))}</span><select class="select" data-dashboard-filter="petMetric">${['quantity','revenue','profit'].map(v=>`<option value="${v}" ${f.petMetric===v?'selected':''}>${escapeHtml(t(state,`dashboard.${v}`))}</option>`).join('')}</select></label>
-    <label class="field"><span>${escapeHtml(t(state,'dashboard.channelMetricLabel'))}</span><select class="select" data-dashboard-filter="channelMetric">${['quantity','revenue','profit','margin'].map(v=>`<option value="${v}" ${f.channelMetric===v?'selected':''}>${escapeHtml(t(state,`dashboard.${v}`))}</option>`).join('')}</select></label>
-    <label class="field"><span>${escapeHtml(t(state,'dashboard.methodMetricLabel'))}</span><select class="select" data-dashboard-filter="methodMetric">${['averageCost','averageProfit','averageMargin','quantity'].map(v=>`<option value="${v}" ${f.methodMetric===v?'selected':''}>${escapeHtml(t(state,`dashboard.${v}`))}</option>`).join('')}</select></label>
-  </div></article>`;
-  if(!sales.length) return `<section class="stack">${hero}${simulations}${adSlot('ad-slot-middle','middle-ad',state)}${filterPanel}<div class="empty dashboard-empty"><img src="/assets/brand/logo-header.webp" alt=""><h2>${escapeHtml(t(state,'dashboard.empty'))}</h2><button class="button primary" data-action="navigate" data-view="sales">${escapeHtml(t(state,'nav.sales'))}</button></div></section>`;
+  </div>${renderDisclosure(state,'pet-dashboard-filters',moreFiltersLabel(state,extraCount),extraFilters)}</div>`;
+  if(!sales.length) return `<section class="stack">${hero}${simulations}${adSlot('ad-slot-middle','middle-ad',state)}${filterPanel}${state.simulations.length||state.sales.length?`<div class="empty dashboard-empty"><h2>${escapeHtml(t(state,'dashboard.empty'))}</h2><p class="muted">${escapeHtml(t(state,'home.noSales'))}</p></div>`:''}</section>`;
   const bestSaleName=stats.bestSale?.creatureCanonicalName||'—';
-  const cards=`<div class="dashboard-kpis">${[
+  const allCards=[
     kpi(state,t(state,'dashboard.salesCount'),formatNumber(stats.count,state.language),formatNumber(stats.count,state.language)),
     kpi(state,t(state,'dashboard.revenue'),formatCompactKamas(stats.revenue,state.language),formatKamas(stats.revenue,state.language)),
     kpi(state,t(state,'dashboard.cost'),formatCompactKamas(stats.cost,state.language),formatKamas(stats.cost,state.language)),
@@ -130,21 +134,25 @@ export function renderDashboard(state) {
     kpi(state,t(state,'dashboard.losses'),formatNumber(stats.losses,state.language),formatNumber(stats.losses,state.language)),
     kpi(state,t(state,'dashboard.bestSale'),stats.bestSale?formatCompactKamas(stats.bestSale.profit,state.language):'—',stats.bestSale?formatKamas(stats.bestSale.profit,state.language):'—',bestSaleName),
     kpi(state,t(state,'dashboard.bestCreature'),stats.bestCreature?.name||'—',stats.bestCreature?formatKamas(stats.bestCreature.profit,state.language):'—')
-  ].join('')}</div>`;
+  ];
+  const cards=`<div class="dashboard-kpis">${allCards.slice(0,5).join('')}</div>`;
+  const moreCards=`<div class="dashboard-kpis">${allCards.slice(5).join('')}</div>`;
   const summary=`${stats.count} · ${formatKamas(stats.revenue,state.language)} · ${formatKamas(stats.profit,state.language)}`;
   const chartsHtml=`<div class="dashboard-charts">
-    ${chartCard(state,'chart-financial',t(state,'dashboard.financialEvolution'),summary)}
-    ${chartCard(state,'chart-sales-count',t(state,'dashboard.salesEvolution'),summary)}
-    ${chartCard(state,'chart-types',t(state,'dashboard.creatureTypes'),summary)}
-    ${chartCard(state,'chart-channels',t(state,'dashboard.channels'),summary)}
-    ${chartCard(state,'chart-top-creatures',t(state,'dashboard.topCreatures'),summary)}
-    ${chartCard(state,'chart-roi',t(state,'dashboard.roi'),summary,true)}
-    ${chartCard(state,'chart-methods',t(state,'dashboard.methods'),summary,true)}
-    ${chartCard(state,'chart-distribution',t(state,'dashboard.distribution'),summary,true)}
+    ${chartCard('chart-financial',t(state,'dashboard.financialEvolution'),summary)}
+    ${chartCard('chart-sales-count',t(state,'dashboard.salesEvolution'),summary)}
+    ${chartCard('chart-types',t(state,'dashboard.creatureTypes'),summary,chartMetric(state,'petMetric','dashboard.typeMetricLabel',['quantity','revenue','profit']))}
+    ${chartCard('chart-channels',t(state,'dashboard.channels'),summary,chartMetric(state,'channelMetric','dashboard.channelMetricLabel',['quantity','revenue','profit','margin']))}
+    ${chartCard('chart-top-creatures',t(state,'dashboard.topCreatures'),summary)}
+  </div>`;
+  const moreCharts=`<div class="dashboard-charts">
+    ${chartCard('chart-roi',t(state,'dashboard.roi'),summary)}
+    ${chartCard('chart-methods',t(state,'dashboard.methods'),summary,chartMetric(state,'methodMetric','dashboard.methodMetricLabel',['averageCost','averageProfit','averageMargin','quantity']))}
+    ${chartCard('chart-distribution',t(state,'dashboard.distribution'),summary)}
   </div>`;
   const grouped=aggregate(sales,f.grouping||'month',state.language);const byProfit=[...grouped].sort((a,b)=>b.profit-a.profit)[0];const byRevenue=[...grouped].sort((a,b)=>b.revenue-a.revenue)[0];const byCount=[...grouped].sort((a,b)=>b.count-a.count)[0];
   const bestPeriod=`<article class="card section"><span class="eyebrow">${escapeHtml(t(state,'dashboard.bestPeriod'))}</span><div class="best-period-grid"><div><span>${escapeHtml(t(state,'dashboard.largestProfit'))}</span><strong>${escapeHtml(byProfit?.label||'—')}</strong><small>${formatKamas(byProfit?.profit||0,state.language)}</small></div><div><span>${escapeHtml(t(state,'dashboard.largestRevenue'))}</span><strong>${escapeHtml(byRevenue?.label||'—')}</strong><small>${formatKamas(byRevenue?.revenue||0,state.language)}</small></div><div><span>${escapeHtml(t(state,'dashboard.mostSales'))}</span><strong>${escapeHtml(byCount?.label||'—')}</strong><small>${formatNumber(byCount?.count||0,state.language)}</small></div></div></article>`;
-  return `<section class="stack">${hero}${simulations}${adSlot('ad-slot-middle','middle-ad',state)}${filterPanel}${cards}${chartsHtml}${bestPeriod}</section>`;
+  return `<section class="stack">${hero}${simulations}${adSlot('ad-slot-middle','middle-ad',state)}${filterPanel}${cards}${chartsHtml}${renderDisclosure(state,'pet-dashboard-details',t(state,'ux.detailedAnalysis'),`${moreCards}${bestPeriod}${moreCharts}`)}</section>`;
 }
 
 function colorSet() { return { blue:'#4f91a8', gold:'#c39745', green:'#5f946b', red:'#b85a50', sand:'#d8bf8c', purple:'#8069a8', gray:'#827b72' }; }
@@ -158,6 +166,7 @@ export function mountDashboardCharts(state) {
   destroyDashboardCharts();
   if(state.route?.name!=='pets' && state.view!=='pets' && state.view!=='dashboard')return;
   const sales=getFilteredDashboardSales(state);if(!sales.length)return;
+  if(!Chart){loadChartLibrary().then(module=>{Chart=module.default;mountDashboardCharts(state);}).catch(()=>{});return;}
   const colors=colorSet();const f=state.dashboardFilters||{};const grouped=aggregate(sales,f.grouping||'month',state.language);const labels=grouped.map(x=>x.label);
   makeChart('chart-financial',{type:'line',data:{labels,datasets:[{label:t(state,'dashboard.revenue'),data:grouped.map(x=>x.revenue),borderColor:colors.blue,backgroundColor:colors.blue,tension:.25},{label:t(state,'dashboard.cost'),data:grouped.map(x=>x.cost),borderColor:colors.gold,backgroundColor:colors.gold,tension:.25},{label:t(state,'dashboard.profit'),data:grouped.map(x=>x.profit),borderColor:colors.green,backgroundColor:colors.green,tension:.25}]},options:baseOptions(state.language,true)});
   makeChart('chart-sales-count',{type:'bar',data:{labels,datasets:[{label:t(state,'dashboard.salesCount'),data:grouped.map(x=>x.count),backgroundColor:colors.blue}]},options:baseOptions(state.language,false)});

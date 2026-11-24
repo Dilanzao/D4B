@@ -10,7 +10,7 @@ await mkdir(dist, { recursive: true });
 await cp(resolve(root, 'public'), dist, { recursive: true });
 await cp(resolve(root, 'src'), resolve(dist, 'src'), { recursive: true });
 
-const cssFiles = ['reset.css', 'variables.css', 'layout.css', 'components.css', 'responsive.css'];
+const cssFiles = ['reset.css', 'variables.css', 'layout.css', 'components.css', 'responsive.css', 'ux.css'];
 let index = await readFile(resolve(root, 'index.html'), 'utf8');
 index = index
   .replaceAll('__APP_VERSION__', APP_VERSION)
@@ -30,7 +30,7 @@ await writeFile(mainPath, main, 'utf8');
 
 const dashboardPath = resolve(dist, 'src/components/dashboard.js');
 let dashboard = await readFile(dashboardPath, 'utf8');
-dashboard = dashboard.replace("import Chart from 'chart.js/auto';", 'const Chart = globalThis.Chart;');
+dashboard = dashboard.replace("import('chart.js/auto')", 'Promise.resolve({ default: globalThis.Chart })');
 await writeFile(dashboardPath, dashboard, 'utf8');
 
 console.log(`Static fallback build prepared for Dofus4Business v${APP_VERSION}.`);

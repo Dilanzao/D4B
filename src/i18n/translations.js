@@ -1,3 +1,6 @@
+import { petTranslations } from './petTranslations.js';
+import { builderTranslations } from './builderTranslations.js';
+
 export const translations = {
   "pt-BR": {
     languageName: "Português",
@@ -750,3 +753,14 @@ const v310Translations = {
   } }
 };
 for (const [language, additions] of Object.entries(v310Translations)) deepMerge(translations[language], additions);
+
+const uxTranslations = {
+  'pt-BR': { ux: {"mainNav":"Navegação principal","sections":"Seções","tabs":{"projects":"Projetos","history":"Histórico","forSale":"À venda"},"summary":"Resumo","welcomeTitle":"O que você quer planejar?","moreFilters":"Mais filtros","moreOptions":"Mais opções","area":"Área","emptyStock":"Seu estoque está vazio.","fillPending":"Completar projeto","missingPrice":"Falta o preço","salesResults":"Resultado das vendas","detailedAnalysis":"Análise detalhada"} },
+  'fr-FR': { ux: {"mainNav":"Navigation principale","sections":"Sections","tabs":{"projects":"Projets","history":"Historique","forSale":"En vente"},"summary":"Résumé","welcomeTitle":"Que voulez-vous planifier ?","moreFilters":"Plus de filtres","moreOptions":"Plus d’options","area":"Domaine","emptyStock":"Votre stock est vide.","fillPending":"Compléter le projet","missingPrice":"Prix manquant","salesResults":"Résultats des ventes","detailedAnalysis":"Analyse détaillée"} },
+  'en-US': { ux: {"mainNav":"Main navigation","sections":"Sections","tabs":{"projects":"Projects","history":"History","forSale":"For sale"},"summary":"Summary","welcomeTitle":"What do you want to plan?","moreFilters":"More filters","moreOptions":"More options","area":"Area","emptyStock":"Your stock is empty.","fillPending":"Complete project","missingPrice":"Price missing","salesResults":"Sales results","detailedAnalysis":"Detailed analysis"} },
+  'es-ES': { ux: {"mainNav":"Navegación principal","sections":"Secciones","tabs":{"projects":"Proyectos","history":"Historial","forSale":"En venta"},"summary":"Resumen","welcomeTitle":"¿Qué quieres planificar?","moreFilters":"Más filtros","moreOptions":"Más opciones","area":"Área","emptyStock":"Tu inventario está vacío.","fillPending":"Completar proyecto","missingPrice":"Falta el precio","salesResults":"Resultado de las ventas","detailedAnalysis":"Análisis detallado"} }
+};
+for (const [language, additions] of Object.entries(uxTranslations)) deepMerge(translations[language], additions);
+
+for (const [language, additions] of Object.entries(builderTranslations)) deepMerge(translations[language], additions);
+for (const [language, additions] of Object.entries(petTranslations)) deepMerge(translations[language], additions);

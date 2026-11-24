@@ -58,7 +58,7 @@ assert.equal(payload.precoVenda,1850000);assert.ok(!('profit' in payload));
 // Resource API fallback/normalization is preserved.
 const originalFetch=globalThis.fetch;
 globalThis.fetch=async()=>({ok:true,json:async()=>[{ankama_id:123,name:'Pó',level:42,image_urls:{sd:'https://example.com/p.png'}}]});
-const remoteCatalog=await loadDofusDudeResourceCatalog('pt-BR',{force:true});assert.equal(remoteCatalog.items[0].ankamaId,123);
+const remoteCatalog=await loadDofusDudeResourceCatalog('pt-BR',{force:true});assert.equal(remoteCatalog.items.filter(item=>item.ankamaId===123).length,1);assert.ok(remoteCatalog.items.some(item=>item.ankamaId===14652&&item.xp>0));
 globalThis.fetch=originalFetch;
 
 // Crafts API: product search excludes resources, keeps only items with a recipe and hydrates ingredient names/images.

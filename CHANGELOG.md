@@ -1,5 +1,29 @@
 # Changelog
 
+## Não lançado
+
+- Novo montador de sets por conversa, com dados do DofusDude, ligado ao estoque, aos crafts e aos pets.
+
+- Up de pets: XP de mais itens (fabricados, essências e chaves) pela planilha comunitária de GoldenSpirit; valores divergentes ficam marcados como "a confirmar" e editáveis.
+
+- Up de pets: plano combinado de ração (mercado, bolsa e kolifichas próprias) e recursos pelo menor custo, com quantidades "já tenho" e "comprar".
+- Up de pets: preços da comunidade por servidor, com envio do preço digitado e busca dos recursos mais baratos.
+
+- Up de Pets reconstruído em uma tela única: ração, bolsa e recursos comparados lado a lado, com o mais barato escolhido sozinho e preço-teto de cada opção.
+- XP de alimentação preenchida para 2.200 recursos e nova aba Recursos.
+- Simulações antigas migram sem perder recursos nem mudar o custo.
+- Pets podem ser colocados à venda; últimos preços são lembrados.
+- Nova página Meus dados, com cópia e restauração.
+- Corrigidos: produção concluída com dados não salvos, lucro potencial de crafts sem taxa e clique perdido ao sair de um campo.
+- Gráficos carregados sob demanda.
+- Simplificada a interface: cabeçalho enxuto, abas internas por área e remoção de banners e textos repetidos.
+- Estoque e vendas de Crafts, vendas de pets e itens à venda passam a ser acessíveis pela navegação.
+- Filtros, indicadores e gráficos secundários agrupados em blocos recolhíveis.
+- Espaços de anúncio só ocupam a tela quando os anúncios estão habilitados.
+- Corrigidos campos cortados nos ingredientes, tabelas sem estilo, variáveis CSS inexistentes e botão de menu duplicado no desktop.
+- Corrigido o lucro potencial de pets, que aparecia sempre como zero na página inicial.
+- O filtro de canal reúne HDV e Mercado HDV.
+
 ## 3.1.0 — 2026-08-05
 
 - Adicionado sistema completo de contas integrado ao Google Apps Script.

@@ -27,6 +27,7 @@ export function icon(name, size = 20) {
     sync:'<path d="M20 7h-5V2M4 17h5v5"/><path d="M5.1 9a8 8 0 0 1 13.2-3L20 7M4 17l1.7 1a8 8 0 0 0 13.2-3"/>',
     pix:'<path d="M8.4 4.4 4.8 8a2.8 2.8 0 0 0 0 4l3.6 3.6a2.8 2.8 0 0 0 4 0l3.6-3.6a2.8 2.8 0 0 0 0-4l-3.6-3.6a2.8 2.8 0 0 0-4 0Z"/><path d="m8 12 2-2a2.8 2.8 0 0 1 4 0l2 2"/>',
     external:'<path d="M14 3h7v7M10 14 21 3M21 14v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h6"/>',
+    shield:'<path d="M12 3 4 6v6c0 4.5 3.3 7.7 8 9 4.7-1.3 8-4.5 8-9V6Z"/><path d="m9 12 2 2 4-4"/>',
     home:'<path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10M9 20v-6h6v6"/>',
     craft:'<path d="M14.7 6.3a4 4 0 0 0-5.6 5.6L3 18l3 3 6.1-6.1a4 4 0 0 0 5.6-5.6l-2.4 2.4-3-3Z"/><path d="m16 4 4 4"/>',
     box:'<path d="m21 8-9 5-9-5 9-5 9 5Z"/><path d="m3 8 9 5 9-5v9l-9 5-9-5Z"/><path d="M12 13v9"/>',
@@ -43,6 +44,8 @@ export function icon(name, size = 20) {
 }
 
 export function adSlot(id, className, state) {
+  // Sem anúncios configurados, o espaço não é reservado na tela.
+  if (!ADS_ENABLED) return '';
   const canLoadAds = advertisingAllowed(state.consent);
   const placeholder = `<div><strong>${escapeHtml(t(state,'common.advertisement'))}</strong><small>${escapeHtml(t(state,'common.adHelp'))}</small></div>`;
   return `<aside id="${id}" class="ad-slot ${className}" data-ad-slot="${id}" data-ads-enabled="${ADS_ENABLED}" data-ad-consent="${Boolean(state.consent?.advertising)}" aria-label="${escapeHtml(t(state,'common.advertisement'))}">${canLoadAds ? '<div class="adsense-mount" aria-hidden="true"></div>' : placeholder}</aside>`;

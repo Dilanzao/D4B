@@ -1,5 +1,6 @@
 import { CONSENT_POLICY_VERSION, DEFAULT_CONSENT, DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES } from '../config/app.js';
 import { findCreatureMatch, getCreatureById } from '../data/creatures.js';
+import { migrateFeeding } from '../modules/pets/petPlan.js';
 import { createId, nowIso } from '../utils/identifiers.js';
 
 export const STORAGE_KEYS = {
@@ -54,13 +55,15 @@ export function normalizeSimulation(input = {}) {
     targetLevel: Number.isFinite(rawTarget) ? Math.min(100, Math.max(1, Math.trunc(rawTarget))) : 80,
     upMethod: legacy.upMethod === '' ? '' : (legacy.upMethod === 'resources'
       ? 'combined'
-      : (['vitaminizedFood','kolitokenBag','combined'].includes(legacy.upMethod)
+      : (['vitaminizedFood','kolitokenBag','combined','resource'].includes(legacy.upMethod)
         ? legacy.upMethod
         : ((legacy.bagPrice || 0) / 10 < (legacy.marketRationPrice || Infinity) ? 'kolitokenBag' : 'vitaminizedFood'))),
     marketFoodPrice: Math.max(0, Math.round(Number(legacy.marketFoodPrice ?? legacy.marketRationPrice ?? 0) || 0)),
     bagPrice: Math.max(0, Math.round(Number(legacy.bagPrice ?? 0) || 0)),
     combinedRationSource: ['vitaminizedFood','kolitokenBag'].includes(legacy.combinedRationSource) ? legacy.combinedRationSource : 'vitaminizedFood',
-    resourceLines: Array.isArray(legacy.resourceLines) ? legacy.resourceLines.filter(Boolean) : [],
+    ...migrateFeeding(legacy),
+    serverId: String(legacy.serverId || ''),
+    serverNameSnapshot: String(legacy.serverNameSnapshot || ''),
     originCost: Math.max(0, Math.round(Number(legacy.originCost ?? legacy.purchasePrice ?? 0) || 0)),
     additionalCosts: Math.max(0, Math.round(Number(legacy.additionalCosts ?? 0) || 0)),
     estimatedSalePrice: Math.max(0, Math.round(Number(legacy.estimatedSalePrice ?? legacy.intendedSalePrice ?? 0) || 0)),

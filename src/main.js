@@ -3,17 +3,18 @@ import './styles/variables.css';
 import './styles/layout.css';
 import './styles/components.css';
 import './styles/responsive.css';
+import './styles/ux.css';
 
-import { APP_VERSION, CONSENT_POLICY_VERSION, PIX_KEY } from './config/app.js';
-import { creatureCatalog, getCreatureById, getCreatureName } from './data/creatures.js';
-import { normalizeResourceText } from './data/feedingResources.js';
+import { APP_VERSION, BAG_ANKAMA_ID, CONSENT_POLICY_VERSION, PIX_KEY, RATION_ANKAMA_ID } from './config/app.js';
+import { getCreatureById, getCreatureName } from './data/creatures.js';
 import { renderHeader } from './components/header.js';
 import { renderFooter } from './components/footer.js';
 import { destroyDashboardCharts, mountDashboardCharts, renderDashboard } from './components/dashboard.js';
-import { renderSimulationEditor } from './components/simulationStepper.js';
+import { creatureOptionsMarkup, petSummaryMarkup, renderSimulationEditor, resourceOptionsMarkup } from './components/simulationStepper.js';
 import { renderSimulationGallery } from './components/simulationGallery.js';
 import { renderSalesHistory } from './components/salesHistory.js';
 import { renderModal } from './components/modals.js';
+import { renderPageHead } from './components/pageLayout.js';
 import { renderHomeHub } from './components/homeHub.js';
 import { renderGlobalSales } from './components/globalSales.js';
 import { renderGlobalInventory } from './components/globalInventory.js';
@@ -36,7 +37,7 @@ import {
 } from './modules/crafts/services/craftStorageService.js';
 import { cancelSaleSync, syncSale } from './services/salesService.js';
 import { applyConsent } from './services/consentService.js';
-import { findResourceCatalogItem, getEmbeddedResourceCatalog, loadDofusDudeResourceCatalog, searchResourceCatalog } from './services/resourceCatalogService.js';
+import { findResourceCatalogItem, getEmbeddedResourceCatalog, loadDofusDudeResourceCatalog } from './services/resourceCatalogService.js';
 import { getRememberedResourceXp, rememberResourceXp } from './services/resourceXpMemoryService.js';
 import { calculateSimulation, calculateSaleProfit } from './utils/calculations.js';
 import { calculateCraftProject, calculateCraftSale, mergeInventory } from './modules/crafts/utils/craftCalculations.js';
@@ -44,8 +45,15 @@ import { collectAncestorAnkamaIds, findIngredientById, flattenCalculatedIngredie
 import { searchCraftItems, fetchCraftItemDetails } from './modules/crafts/services/dofusDudeCraftService.js';
 import { parseKamas, formatNumber } from './utils/currency.js';
 import { createId, nowIso, toIsoLocalDateTime } from './utils/identifiers.js';
-import { includesNormalized } from './utils/textSearch.js';
-import { validateStep } from './utils/validation.js';
+import { validateSimulation } from './utils/validation.js';
+import { petCreature, renderBuilderPage } from './modules/builder/builderPage.js';
+import { banItem, deleteSaved, loadGear, openSaved, saveCurrent, sendBuilderMessage, swapItem, toggleLock } from './modules/builder/builderController.js';
+import { itemName } from './modules/builder/gearSchema.js';
+import { renderResourceExplorer } from './modules/pets/resourceExplorer.js';
+import { AUTO_FOOD, BAG, RATION, foodAnkamaId, foodId, methodForPlan, normalizeAmount, normalizeFood, planResourceLines } from './modules/pets/petPlan.js';
+import { ALL_FEED_IDS, applyPetCommunityPrices, emptyPetCommunity, getFoodPrice, setFoodPrice, simulationAnkamaIds } from './modules/pets/petCommunity.js';
+import { loadPetPrices, savePetPrices } from './modules/pets/petPriceMemory.js';
+import { createBackup, parseBackup, restoreBackup } from './services/backupService.js';
 import { installRouter, navigatePath, navigateTo } from './router/router.js';
 import { captureFocusSnapshot, restoreFocusSnapshot } from './utils/focusPreservation.js';
 import { captureScrollSnapshot, restoreScrollSnapshot } from './utils/scrollPreservation.js';
@@ -58,19 +66,25 @@ const app = document.querySelector('#app');
 const pendingRoute = (() => { try { const value = sessionStorage.getItem('d4b_pending_route'); if (value) sessionStorage.removeItem('d4b_pending_route'); return value; } catch { return null; } })();
 if (pendingRoute && pendingRoute.startsWith('/')) history.replaceState(null, '', pendingRoute);
 
+let explorerTimer = null;
 let craftSearchTimer = null;
 let craftSearchController = null;
 let lastRenderedRoutePath = null;
 
 function newSimulation(base = {}) {
+  const server = activeServerFor();
+  const remembered = {};
+  if (base.marketFoodPrice === undefined && state.petPrices.ration) remembered[RATION] = 'memory';
+  if (base.bagPrice === undefined && state.petPrices.bag) remembered[BAG] = 'memory';
   const hasTarget = Object.prototype.hasOwnProperty.call(base, 'targetLevel');
   return normalizeSimulation({
     id: base.id || createId('simulation'), name: base.name || '', creatureType: base.creatureType || 'Mascote',
     creatureId: base.creatureId || '', creatureCanonicalName: base.creatureCanonicalName || '',
     creatureImageUrl: base.creatureImageUrl || '/assets/placeholders/creature-fallback.svg',
     originLevel: base.originLevel ?? 0, currentXp: base.currentXp ?? 0, xpBonusPercent: base.xpBonusPercent ?? 0,
-    targetLevel: hasTarget ? base.targetLevel : 100, upMethod: base.upMethod ?? '', marketFoodPrice: base.marketFoodPrice ?? 0,
-    bagPrice: base.bagPrice ?? 0, combinedRationSource: base.combinedRationSource || 'vitaminizedFood',
+    targetLevel: hasTarget ? base.targetLevel : 100, upMethod: base.upMethod ?? '', mainFood: base.mainFood ?? (base.upMethod ? '' : AUTO_FOOD), foods: structuredClone(base.foods || []), amounts: structuredClone(base.amounts || {}), priceSources: { ...remembered, ...(base.priceSources || {}) },
+    serverId: base.serverId || state.account?.user?.serverId || '', serverNameSnapshot: base.serverNameSnapshot || server?.name || '',
+    marketFoodPrice: base.marketFoodPrice ?? state.petPrices.ration, bagPrice: base.bagPrice ?? state.petPrices.bag, combinedRationSource: base.combinedRationSource || 'vitaminizedFood',
     resourceLines: Array.isArray(base.resourceLines) ? structuredClone(base.resourceLines) : [], originCost: base.originCost ?? 0,
     additionalCosts: base.additionalCosts ?? 0, estimatedSalePrice: base.estimatedSalePrice ?? 0,
     estimatedSaleChannel: base.estimatedSaleChannel || 'Mercado HDV', createdAt: base.createdAt || nowIso(), updatedAt: nowIso()
@@ -84,7 +98,7 @@ function createEditorState(simulation, mode = 'new') {
     copy.name = copy.name ? `${copy.name} — ${t(state,'common.copySuffix')}` : '';
     copy.createdAt = nowIso(); copy.updatedAt = nowIso(); copy.status = 'ready'; copy.lastSaleAt = null;
   }
-  return { mode, step:1, maxReached:1, simulation:copy, errors:{}, resourcesOpen:copy.upMethod==='combined', creatureQuery:'', resourceQuery:'', resourceComboOpen:false, selectedResourceId:'', resourceDraft:{xp:0,quantity:1,unitPrice:0,custom:false}, comboOpen:false, activeOption:0 };
+  return { mode, simulation:copy, errors:{}, creatureQuery:'', resourceQuery:'', resourceComboOpen:false, comboOpen:false };
 }
 
 function openEditor(simulation, mode = 'new', { navigate = true } = {}) {
@@ -127,11 +141,11 @@ function generateSimulationName(sim) {
 }
 
 function renderPetSimulationsPage() {
-  return `<section class="stack"><div class="breadcrumbs"><button data-action="route" data-route="home">${escapeHtml(t(state,'v3.nav.home'))}</button><span>›</span><button data-action="route" data-route="pets">${escapeHtml(t(state,'v3.nav.pets'))}</button><span>›</span><span aria-current="page">${escapeHtml(t(state,'nav.simulations'))}</span></div><div class="section-head"><div><span class="eyebrow">${escapeHtml(t(state,'v3.modules.pets.title'))}</span><h1>${escapeHtml(t(state,'simulations.title'))}</h1><p>${escapeHtml(t(state,'simulations.description'))}</p></div><button class="button primary" data-action="new-simulation">${icon('plus',17)} ${escapeHtml(t(state,'home.newSimulation'))}</button></div>${renderSimulationGallery(state)}</section>`;
+  return `<section class="stack">${renderPageHead(state,{title:t(state,'v3.modules.pets.title'),tabs:'pets',actions:`<button class="button primary" data-action="new-simulation">${icon('plus',17)} ${escapeHtml(t(state,'home.newSimulation'))}</button>`})}${renderSimulationGallery(state)}</section>`;
 }
 
 function renderSettingsPage() {
-  return `<section class="stack"><div class="section-head"><div><span class="eyebrow">${escapeHtml(t(state,'v3.nav.settings'))}</span><h1>${escapeHtml(t(state,'v3.nav.settings'))}</h1><p>${escapeHtml(t(state,'consent.text'))}</p></div></div><article class="card section"><button class="button secondary" data-action="open-consent">${escapeHtml(t(state,'footer.privacyPreferences'))}</button><button class="button secondary" data-action="open-information" data-section="about">${escapeHtml(t(state,'footer.transparency'))}</button></article></section>`;
+  return `<section class="stack"><div class="section-head"><div><span class="eyebrow">${escapeHtml(t(state,'v3.nav.settings'))}</span><h1>${escapeHtml(t(state,'v3.nav.settings'))}</h1></div></div><article class="card section stack-tight"><h2>${escapeHtml(t(state,'backup.title'))}</h2><p class="muted">${escapeHtml(t(state,'backup.help'))}</p><div class="button-row"><button class="button primary" data-action="backup-export">${escapeHtml(t(state,'backup.export'))}</button><label class="button secondary backup-import">${escapeHtml(t(state,'backup.import'))}<input class="visually-hidden" type="file" accept="application/json,.json" data-backup-import></label></div></article><article class="card section button-row"><button class="button secondary" data-action="open-consent">${escapeHtml(t(state,'footer.privacyPreferences'))}</button><button class="button secondary" data-action="open-information" data-section="about">${escapeHtml(t(state,'footer.transparency'))}</button></article></section>`;
 }
 
 function renderView() {
@@ -139,6 +153,7 @@ function renderView() {
   if (route === 'home') return renderHomeHub(state);
   if (route === 'pets') return renderDashboard(state);
   if (route === 'pet-simulations') return renderPetSimulationsPage();
+  if (route === 'pet-resources') return renderResourceExplorer(state);
   if (route === 'pet-sales') return renderSalesHistory(state);
   if ((route === 'pet-simulation-new' || route === 'pet-simulation-edit') && state.simulationEditor) return renderSimulationEditor(state);
   if (route === 'crafts' || route === 'craft-projects') return renderCraftsHome(state);
@@ -147,6 +162,7 @@ function renderView() {
   if (route === 'craft-sales') return renderCraftSales(state);
   if (route === 'global-sales') return renderGlobalSales(state);
   if (route === 'global-inventory') return renderGlobalInventory(state);
+  if (route === 'builder') return renderBuilderPage(state);
   if (route === 'settings') return renderSettingsPage();
   if (route === 'login') return renderLoginPage(state);
   if (route === 'register') return renderRegisterPage(state);
@@ -162,7 +178,24 @@ function renderCookieBanner() {
   return `<aside class="cookie-banner" aria-label="${escapeHtml(t(state,'consent.title'))}"><div><strong>${escapeHtml(t(state,'consent.title'))}</strong><p class="small">${escapeHtml(t(state,'consent.text'))}</p></div><div class="cookie-actions"><button class="button secondary compact" data-action="consent-reject">${escapeHtml(t(state,'consent.reject'))}</button><button class="button secondary compact" data-action="open-consent">${escapeHtml(t(state,'consent.configure'))}</button><button class="button primary compact" data-action="consent-accept">${escapeHtml(t(state,'consent.acceptAll'))}</button></div></aside>`;
 }
 
+// Se um campo é confirmado ao clicar em um botão, recriar a tela entre o "pressionar" e o "soltar"
+// faria o clique se perder. Nesse intervalo a renderização espera.
+let pointerHeld = false;
+let renderPending = false;
+function releasePointer() {
+  if (!pointerHeld) return;
+  pointerHeld = false;
+  if (renderPending) { renderPending = false; render(); }
+}
+app.addEventListener('pointerdown', event => {
+  if (!event.target.closest('button,summary,label,a')) return;
+  pointerHeld = true;
+  window.setTimeout(releasePointer, 700);
+}, true);
+['pointerup', 'pointercancel'].forEach(name => window.addEventListener(name, () => window.setTimeout(releasePointer, 30), true));
+
 function render() {
+  if (pointerHeld) { renderPending = true; return; }
   const focusSnapshot = captureFocusSnapshot(app);
   const preserveScroll = lastRenderedRoutePath === state.route?.path;
   const scrollSnapshot = captureScrollSnapshot(app);
@@ -170,7 +203,9 @@ function render() {
   document.documentElement.lang = state.language;
   document.title = `Dofus4Business v${APP_VERSION}`;
   const editorRoute = ['pet-simulation-new','pet-simulation-edit','craft-project-new','craft-project-edit'].includes(state.route?.name);
-  app.innerHTML = `<div class="app-shell">${renderHeader(state)}<div class="container">${adSlot('ad-slot-header','header-ad',state)}</div><main id="main-content" class="main"><div class="container">${editorRoute?`<div class="page-grid"><div>${renderView()}</div><aside class="sidebar sticky">${adSlot('ad-slot-sidebar','sidebar-ad',state)}<article class="card section"><span class="eyebrow">${escapeHtml(t(state,'support.title'))}</span><p class="muted small" style="margin-top:8px">${escapeHtml(t(state,'support.text'))}</p><button class="button secondary" style="margin-top:12px" data-action="open-support">${icon('pix',17)} ${escapeHtml(t(state,'support.button'))}</button></article></aside></div>`:renderView()}</div></main>${renderFooter(state)}${renderModal(state)}${state.toast?`<div class="toast ${state.toast.tone==='error'?'error':''}" role="status">${escapeHtml(state.toast.message)}</div>`:''}${renderCookieBanner()}</div>`;
+  const sidebarAd = adSlot('ad-slot-sidebar','sidebar-ad',state);
+  app.innerHTML = `<div class="app-shell">${renderHeader(state)}<div class="container">${adSlot('ad-slot-header','header-ad',state)}</div><main id="main-content" class="main"><div class="container">${editorRoute&&sidebarAd?`<div class="page-grid"><div>${renderView()}</div><aside class="sidebar sticky">${sidebarAd}</aside></div>`:editorRoute?`<div class="editor-wide">${renderView()}</div>`:renderView()}</div></main>${renderFooter(state)}${renderModal(state)}${state.toast?`<div class="toast ${state.toast.tone==='error'?'error':''}" role="status">${escapeHtml(state.toast.message)}</div>`:''}${renderCookieBanner()}</div>`;
+  if (lastRenderedRoutePath !== null && !preserveScroll) window.scrollTo({ top: 0, behavior: 'instant' });
   lastRenderedRoutePath = state.route?.path || null;
   requestAnimationFrame(() => {
     const shouldFocusModal = state.modal && !focusSnapshot?.inModal;
@@ -211,6 +246,8 @@ function hydrateRoute(route) {
     state.accountUi.verificationMessage = token ? '' : t(state,'v310.account.verificationFailed');
     if (token) queueMicrotask(() => verifyEmailToken(token));
   }
+  if (route.name === 'builder') void ensureGear();
+  if (state.simulationEditor || route.name === 'pet-resources') queueMicrotask(() => refreshPetCommunity());
   if (route.name === 'account-settings' && state.account?.user) {
     state.accountUi.settings = {
       displayName: state.account.user.displayName || '',
@@ -221,6 +258,44 @@ function hydrateRoute(route) {
   emit();
 }
 
+
+async function ensureGear() {
+  const builder = state.builder;
+  if (builder.gear || builder.status === 'loading') return;
+  builder.status = 'loading';
+  try { builder.gear = await loadGear(); builder.status = 'ready'; } catch { builder.status = 'error'; }
+  emit();
+  scrollBuilderLog();
+}
+
+function scrollBuilderLog() {
+  requestAnimationFrame(() => requestAnimationFrame(() => { const log = app.querySelector('[data-builder-log]'); if (log) log.scrollTop = log.scrollHeight; }));
+}
+
+const emitBuilder = () => { emit(); scrollBuilderLog(); };
+
+function handleBuilderAction(action, button) {
+  const id = Number(button.dataset.id), index = Number(button.dataset.index), builder = state.builder;
+  if (action === 'builder-send') void sendBuilderMessage(state, button.dataset.text, emitBuilder);
+  else if (action === 'builder-reload') { void ensureGear(); emit(); }
+  else if (action === 'builder-save') { saveCurrent(state); showToast(t(state, 'builder.saved')); }
+  else if (action === 'builder-open') { openSaved(state, button.dataset.id); emit(); }
+  else if (action === 'builder-delete') { deleteSaved(state, button.dataset.id); emit(); }
+  else if (action === 'builder-lock') { toggleLock(state, id); emit(); }
+  else if (action === 'builder-swap') { builder.swapIndex = builder.swapIndex === index ? null : index; emit(); }
+  else if (action === 'builder-use') { swapItem(state, index, id); emit(); }
+  else if (action === 'builder-ban') void banItem(state, id, emitBuilder);
+  else if (action === 'builder-pet') {
+    const creature = petCreature(builder.gear.item(id));
+    if (creature) openEditor(newSimulation({ creatureId: creature.id, creatureType: creature.type }), 'new');
+  } else if (action === 'builder-craft') {
+    const item = builder.gear?.item(id);
+    if (!item) return;
+    openCraftEditor(newCraftProject(), 'new');
+    state.craftSearch = { query: '', status: 'idle', error: null, results: [{ ankamaId: id, name: itemName(item, state.language), category: 'equipment' }] };
+    void selectCraftItem(id);
+  }
+}
 
 function accountErrorMessage(error) {
   return String(error?.message || t(state,'common.noResults'));
@@ -240,6 +315,7 @@ function applyAccountUser(user, patch = {}) {
     user: user || null,
     selectedServer
   };
+  syncPetServer();
   if (user) {
     state.accountUi.settings = {
       displayName: user.displayName || '',
@@ -256,6 +332,8 @@ async function loadAccountServers() {
     const servers = Array.isArray(data.servers) ? data.servers : [];
     state.servers = servers;
     state.account.selectedServer = activeServerFor();
+    const editing = state.simulationEditor?.simulation;
+    if (editing?.serverId && !editing.serverNameSnapshot) editing.serverNameSnapshot = servers.find(server => String(server.id) === String(editing.serverId))?.name || '';
     emit();
     return servers;
   } catch {
@@ -279,6 +357,7 @@ async function restoreAccountSession() {
       user: data.user
     });
     emit();
+    void refreshPetCommunity();
     return true;
   } catch {
     clearAccountSession();
@@ -420,10 +499,200 @@ function updateEditorField(field, rawValue, shouldRender = true) {
     else if (field === 'xpBonusPercent') sim[field] = Math.min(1000, Math.max(0, Number(String(rawValue).replace(',','.')) || 0));
     else sim[field] = parseKamas(rawValue);
   } else sim[field] = rawValue;
-  if (field === 'originLevel' && sim.originLevel >= sim.targetLevel) sim.targetLevel = Math.min(100, sim.originLevel + 1);
-  if (field === 'creatureType') { sim.creatureId=''; sim.creatureCanonicalName=''; sim.creatureImageUrl='/assets/placeholders/creature-fallback.svg'; ed.creatureQuery=''; ed.comboOpen=true; }
+  if (shouldRender && field === 'originLevel' && sim.originLevel >= sim.targetLevel) sim.targetLevel = Math.min(100, sim.originLevel + 1);
   ed.errors = {};
-  if (shouldRender) emit();
+  if (shouldRender) emit(); else refreshPetSummary();
+}
+
+function refreshPetSummary() {
+  const summary = app.querySelector('[data-pet-summary]');
+  if (summary && state.simulationEditor) summary.innerHTML = petSummaryMarkup(state);
+}
+
+function rememberPetPrice(key, price) {
+  if (key === 'ration' || key === 'bag') state.petPrices[key] = price;
+  else if (price > 0) state.petPrices.resources[key] = price;
+  else delete state.petPrices.resources[key];
+  savePetPrices(state.petPrices, state.account?.user?.serverId || '');
+}
+
+function addFood(item, patch = {}) {
+  const foods = state.simulationEditor.simulation.foods;
+  const food = normalizeFood({ id: foodId(item), ankamaId: item.ankamaId, name: item.name, imageUrl: item.imageUrl, xp: item.xp, price: state.petPrices.resources[item.ankamaId] || 0, ...patch });
+  if (food.id === RATION || foods.some(row => row.id === food.id)) return;
+  foods.push(food);
+  if (food.price) state.simulationEditor.simulation.priceSources[food.id] = 'memory';
+  applyPetCommunityPrices(state.simulationEditor.simulation, petCommunityFor(state.simulationEditor.simulation));
+  if (food.ankamaId != null && !petCommunityFor(state.simulationEditor.simulation)[food.ankamaId]) void refreshPetCommunity();
+}
+
+function updateFood(target) {
+  const sim = state.simulationEditor?.simulation;
+  if (!sim) return;
+  const { id, foodField: field } = target.dataset;
+  if (field === 'xp') {
+    const food = sim.foods.find(row => row.id === id);
+    if (!food) return;
+    food.xp = Math.max(0, Number(String(target.value).replace(',', '.')) || 0);
+    rememberResourceXp(food, food.xp);
+  } else if (field === 'price') {
+    setFoodPrice(sim, id, parseKamas(target.value), 'manual');
+    rememberFoodPrice(foodAnkamaId(sim, id), getFoodPrice(sim, id));
+  } else if (field === 'owned' || field === 'buy') {
+    const raw = String(target.value).replace(/\D/g, '');
+    const amounts = { ...(sim.amounts[id] || {}), [field]: field === 'buy' && raw === '' ? null : raw };
+    sim.amounts = { ...sim.amounts, [id]: normalizeAmount(amounts) };
+    if (field === 'buy' && raw !== '' && sim.mainFood === id) sim.mainFood = AUTO_FOOD;
+  }
+}
+
+function rememberFoodPrice(ankamaId, price) {
+  if (ankamaId == null) return;
+  const id = Number(ankamaId);
+  rememberPetPrice(id === RATION_ANKAMA_ID ? 'ration' : id === BAG_ANKAMA_ID ? 'bag' : String(id), price);
+}
+
+// Preços da comunidade só valem para o servidor em que foram consultados.
+function petCommunityFor(sim) {
+  const serverId = sim?.serverId || state.account?.user?.serverId || '';
+  return String(serverId) === String(state.petCommunity.serverId) ? state.petCommunity.prices : {};
+}
+
+let petServerId = state.account?.user?.serverId || '';
+function syncPetServer() {
+  const serverId = state.account?.user?.serverId || '';
+  if (serverId === petServerId) return;
+  petServerId = serverId;
+  state.petPrices = loadPetPrices(serverId);
+  state.petCommunity = emptyPetCommunity(serverId);
+}
+
+function petQueryContext() {
+  const token = state.account?.sessionToken;
+  const serverId = state.simulationEditor?.simulation.serverId || state.account?.user?.serverId;
+  return token && serverId && state.account?.user && isAccountApiConfigured() ? { token, serverId: String(serverId) } : null;
+}
+
+function usePetCommunity(serverId) {
+  if (String(state.petCommunity.serverId) !== serverId) state.petCommunity = emptyPetCommunity(serverId);
+  return state.petCommunity;
+}
+
+async function queryPetPrices({ token, serverId }, ankamaIds) {
+  const data = await accountApi.consultarPrecosEmLote({ sessionToken: token, serverId, priceMode: state.account.user?.priceMode || 'COMUNIDADE', ankamaIds: ankamaIds.map(String) });
+  return data.prices || {};
+}
+
+async function refreshPetCommunity({ notify = false } = {}) {
+  const sim = state.simulationEditor?.simulation;
+  const onPage = sim || state.route?.name === 'pet-resources';
+  if (onPage && sim && !sim.serverId && state.account?.user?.serverId) {
+    sim.serverId = String(state.account.user.serverId);
+    sim.serverNameSnapshot = activeServerFor()?.name || '';
+  }
+  const context = petQueryContext();
+  if (!onPage || !context) return false;
+  const community = usePetCommunity(context.serverId);
+  community.status = 'loading';
+  try {
+    const prices = await queryPetPrices(context, sim ? simulationAnkamaIds(sim) : [RATION_ANKAMA_ID, BAG_ANKAMA_ID]);
+    Object.assign(community.prices, prices);
+    community.status = 'ready';
+    const current = state.simulationEditor?.simulation;
+    if (current) applyPetCommunityPrices(current, petCommunityFor(current));
+    emit();
+    return true;
+  } catch (error) {
+    community.status = 'error';
+    emit();
+    if (notify) showToast(accountErrorMessage(error), 'error');
+    return false;
+  }
+}
+
+// Consulta sob demanda de todos os alimentos. O lote diminui se o serviço recusar o tamanho.
+async function scanPetCommunity() {
+  const context = petQueryContext();
+  if (!context) { navigateTo('login'); return; }
+  const community = usePetCommunity(context.serverId);
+  if (community.scan === 'loading') return;
+  community.scan = 'loading'; community.progress = 0;
+  emit();
+  let size = 250;
+  for (let start = 0; start < ALL_FEED_IDS.length;) {
+    try {
+      Object.assign(community.prices, await queryPetPrices(context, ALL_FEED_IDS.slice(start, start + size)));
+      start += size;
+      community.progress = Math.min(100, Math.round(start / ALL_FEED_IDS.length * 100));
+      const label = app.querySelector('[data-scan-progress]');
+      if (label) label.textContent = `${community.progress}%`;
+    } catch (error) {
+      if (error?.code === 'NETWORK_ERROR' || size <= 50) {
+        community.scan = 'error'; emit(); showToast(accountErrorMessage(error), 'error');
+        return;
+      }
+      size = Math.max(50, Math.floor(size / 2));
+    }
+  }
+  community.scan = 'ready';
+  const current = state.simulationEditor?.simulation;
+  if (current) applyPetCommunityPrices(current, petCommunityFor(current));
+  emit();
+}
+
+async function publishPetPrice({ ankamaId, name, price, bag = false, projectId = '' }) {
+  const context = petQueryContext();
+  if (!context || ankamaId == null || !(price > 0)) return false;
+  const community = usePetCommunity(context.serverId);
+  if (community.prices[ankamaId]?.isOwn && Number(community.prices[ankamaId].unitPrice) === price && !Number(community.prices[ankamaId].ageDays)) return true;
+  community.sync[ankamaId] = 'saving';
+  emit();
+  const send = origin => accountApi.registrarPrecosEmLote({
+    sessionToken: context.token, serverId: context.serverId, siteVersion: APP_VERSION,
+    prices: [{ ankamaId, itemNameSnapshot: name, itemCategory: bag ? 'Consumível' : 'Recurso', quantity: 1, totalPrice: price, origin, projectId }]
+  });
+  try {
+    const data = await send('CRAFT');
+    const saved = (data.registered || []).find(row => String(row.ankamaId) === String(ankamaId));
+    community.prices[ankamaId] = { unitPrice: Number(saved?.unitPrice) || price, registeredAt: saved?.registeredAt || nowIso(), ageDays: 0, freshness: 'FRESH', source: 'COMUNIDADE', isOwn: true };
+    community.sync[ankamaId] = 'saved';
+    emit();
+    return true;
+  } catch (error) {
+    community.sync[ankamaId] = 'error';
+    emit();
+    showToast(accountErrorMessage(error), 'error');
+    return false;
+  }
+}
+
+function publishFood(id) {
+  const sim = state.simulationEditor?.simulation;
+  if (!sim) return;
+  const bag = id === BAG;
+  const name = id === RATION ? t({ language: 'pt-BR' }, 'simulation.marketFood') : bag ? t({ language: 'pt-BR' }, 'simulation.kolitokenBag') : sim.foods.find(food => food.id === id)?.name || '';
+  void publishPetPrice({ ankamaId: foodAnkamaId(sim, id), name, price: getFoodPrice(sim, id), bag, projectId: sim.id });
+}
+
+function updateExplorerField(field, value) {
+  const numeric = field === 'minXp' || field === 'maxLevel';
+  state.petExplorer = { ...state.petExplorer, limit: 40, [field]: numeric ? Math.max(0, Number(String(value).replace(',', '.')) || 0) : value };
+}
+
+function exportBackup() {
+  const url = URL.createObjectURL(new Blob([JSON.stringify(createBackup(APP_VERSION))], { type: 'application/json' }));
+  const link = document.createElement('a');
+  link.href = url; link.download = `dofus4business-${nowIso().slice(0, 10)}.json`;
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function importBackup(file) {
+  if (!file) return;
+  try {
+    const backup = parseBackup(await file.text());
+    openModal({ type: 'confirm', title: t(state, 'backup.import'), text: t(state, 'backup.confirm', { date: backup.exportedAt ? new Intl.DateTimeFormat(state.language).format(new Date(backup.exportedAt)) : '—' }), confirmLabel: t(state, 'backup.replace'), confirmAction: 'restore-backup', backup });
+  } catch { showToast(t(state, 'backup.invalid'), 'error'); }
 }
 
 function updateCraftField(field, rawValue, shouldRender = true) {
@@ -453,16 +722,12 @@ function addActivity(input) {
 
 function updatePetCreatureListDom() {
   const editor=state.simulationEditor;const list=app.querySelector('#creature-options');if(!editor||!list)return;
-  const query=editor.creatureQuery||'';
-  const filtered=creatureCatalog.filter(creature=>creature.type===editor.simulation.creatureType&&[getCreatureName(creature,state.language),creature.canonicalName,...Object.values(creature.names||{})].some(name=>includesNormalized(name,query)));
-  list.innerHTML=filtered.length?filtered.map((creature,index)=>`<button class="combobox-option" type="button" role="option" aria-selected="${creature.id===editor.simulation.creatureId}" data-action="select-creature" data-id="${creature.id}" data-index="${index}">${imageTag(creature.imageUrl,getCreatureName(creature,state.language))}<span><strong>${escapeHtml(getCreatureName(creature,state.language))}</strong><small class="muted">${escapeHtml(creature.type==='Mascote'?t(state,'simulation.pet'):t(state,'simulation.petsmount'))}</small></span></button>`).join(''):`<p class="small muted" style="padding:12px">${escapeHtml(t(state,'common.noResults'))}</p>`;
+  list.innerHTML=creatureOptionsMarkup(state,editor);
 }
 
 function updatePetResourceListDom() {
   const editor=state.simulationEditor;const list=app.querySelector('#resource-options');if(!editor||!list)return;
-  const query=editor.resourceQuery||'';const filtered=searchResourceCatalog(state.resourceCatalog,query);
-  const normalizedQuery=normalizeResourceText(query);const exact=filtered.some(item=>[item.name,item.canonicalName].some(name=>normalizeResourceText(name)===normalizedQuery));const custom=query.trim()&&!exact;
-  list.innerHTML=filtered.map((item,index)=>`<button class="combobox-option" type="button" role="option" aria-selected="${item.id===editor.selectedResourceId}" data-action="select-resource" data-id="${escapeHtml(item.id)}" data-index="${index}">${item.imageUrl?`<img src="${escapeHtml(item.imageUrl)}" alt="" loading="lazy" width="42" height="42" onerror="this.hidden=true">`:`<span class="resource-option-placeholder">${icon('box',20)}</span>`}<span><strong>${escapeHtml(item.name)}</strong><small class="muted">${item.level?`${escapeHtml(t(state,'simulation.resourceLevel'))} ${item.level} · `:''}${item.xp?`${formatNumber(item.xp,state.language,3)} XP`:escapeHtml(t(state,'simulation.xpNeedsInput'))}</small></span></button>`).join('')+(custom?`<button class="combobox-option custom-option" type="button" role="option" data-action="select-custom-resource"><span class="resource-option-placeholder">${icon('plus',20)}</span><span><strong>${escapeHtml(t(state,'simulation.addCustomResourceOption'))}</strong><small class="muted">${escapeHtml(query.trim())}</small></span></button>`:'')+(!filtered.length&&!custom?`<p class="small muted" style="padding:12px">${escapeHtml(t(state,'common.noResults'))}</p>`:'');
+  list.innerHTML=resourceOptionsMarkup(state,editor);
 }
 
 function craftSearchMarkup() {
@@ -535,7 +800,7 @@ async function loadSubrecipe(ingredientId, { openPlanner=false, pushToStack=fals
   } catch { line.subRecipeStatus='error';showToast(t(state,'v3.crafts.apiUnavailable'),'error');emit();return false; }
 }
 
-async function saveCraftProject() {
+async function saveCraftProject({ stay = false } = {}) {
   const editor=state.craftEditor;if(!editor)return;const project=editor.project;
   if(!project.ankamaId||!project.itemNameSnapshot){showToast(t(state,'v3.crafts.chooseItemFirst'),'error');return;}
   await flushDirtyIngredientPrices();
@@ -543,7 +808,7 @@ async function saveCraftProject() {
   const ready=calc.readiness==='ready';
   const activeServer=state.account?.selectedServer||activeServerFor();
   const saved=normalizeCraftProject({...project,serverId:project.serverId||activeServer?.id||state.account?.user?.serverId||'',serverNameSnapshot:project.serverNameSnapshot||activeServer?.name||'',status:ready?'ready':'draft',totalCost:calc.totalCost,financialCost:calc.totalCost,economicCost:calc.totalCost,accountingCost:calc.totalCost,replacementCost:calc.totalCost,updatedAt:nowIso()});
-  const exists=state.craftProjects.some(item=>item.id===saved.id);setCraftProjects(exists?state.craftProjects.map(item=>item.id===saved.id?saved:item):[saved,...state.craftProjects]);addActivity({module:'crafts',action:exists?'craft_project_updated':'craft_project_created',itemName:saved.itemNameSnapshot,itemImage:saved.itemImageSnapshot,entityId:saved.id,route:`/crafts/projetos/${encodeURIComponent(saved.id)}`,value:calc.totalCost});state.craftEditor=null;navigateTo('crafts');showToast(ready?t(state,'v3.crafts.savedAsReady'):t(state,'v3.crafts.savedAsDraft'));
+  const exists=state.craftProjects.some(item=>item.id===saved.id);setCraftProjects(exists?state.craftProjects.map(item=>item.id===saved.id?saved:item):[saved,...state.craftProjects]);addActivity({module:'crafts',action:exists?'craft_project_updated':'craft_project_created',itemName:saved.itemNameSnapshot,itemImage:saved.itemImageSnapshot,entityId:saved.id,route:`/crafts/projetos/${encodeURIComponent(saved.id)}`,value:calc.totalCost});if(stay){editor.project=saved;editor.mode='edit';return saved;}state.craftEditor=null;navigateTo('crafts');showToast(ready?t(state,'v3.crafts.savedAsReady'):t(state,'v3.crafts.savedAsDraft'));
 }
 
 function completeCraftProject(projectId, forSale=false) {
@@ -728,6 +993,7 @@ async function performLogout(all = false) {
 
 function handleAction(button) {
   const action=button.dataset.action;if(!action)return;
+  if(action.startsWith('builder-')){handleBuilderAction(action,button);return;}
   if(action==='route'){navigateTo(button.dataset.route);return;}
   if(action==='navigate-path'){navigatePath(button.dataset.path);return;}
   if(action==='navigate'){const mapping={dashboard:'pets',simulations:'pet-simulations',sales:'pet-sales'};navigateTo(mapping[button.dataset.view]||'home');return;}
@@ -735,20 +1001,17 @@ function handleAction(button) {
   if(action==='new-simulation'){openEditor(newSimulation(),'new');return;}
   if(action==='edit-simulation'){closeModal();const sim=state.simulations.find(x=>x.id===button.dataset.id);if(sim)openEditor(sim,'edit');return;}
   if(action==='duplicate-simulation'){closeModal();const sim=state.simulations.find(x=>x.id===button.dataset.id);if(sim)openEditor(sim,'duplicate');return;}
-  if(action==='exit-editor'){state.simulationEditor=null;navigateTo('pets');return;}
-  if(action==='go-step'){const target=Number(button.dataset.step),ed=state.simulationEditor;if(target<=ed.maxReached){if(target>ed.step){const errors=validateStep(ed.simulation,ed.step,calculateSimulation(ed.simulation));if(Object.keys(errors).length){ed.errors=errors;showToast(t(state,'toast.invalidStep'),'error');return;}}ed.step=target;ed.errors={};emit();}return;}
-  if(action==='prev-step'){state.simulationEditor.step=Math.max(1,state.simulationEditor.step-1);state.simulationEditor.errors={};emit();return;}
-  if(action==='next-step'){const ed=state.simulationEditor,calc=calculateSimulation(ed.simulation),errors=validateStep(ed.simulation,ed.step,calc);if(Object.keys(errors).length){ed.errors=errors;showToast(t(state,'toast.invalidStep'),'error');return;}ed.step=Math.min(5,ed.step+1);ed.maxReached=Math.max(ed.maxReached,ed.step);ed.errors={};emit();return;}
-  if(action==='save-simulation'){const ed=state.simulationEditor,calc=calculateSimulation(ed.simulation);let errors={},firstInvalid=5;for(let step=1;step<=4;step++){const current=validateStep(ed.simulation,step,calc);if(Object.keys(current).length&&firstInvalid===5)firstInvalid=step;errors={...errors,...current};}if(Object.keys(errors).length){ed.errors=errors;ed.step=firstInvalid;showToast(t(state,'toast.invalidStep'),'error');return;}const creature=getCreatureById(ed.simulation.creatureId);const saved={...ed.simulation,name:generateSimulationName(ed.simulation),creatureCanonicalName:creature.canonicalName,creatureImageUrl:creature.imageUrl,unassociatedCreature:false,updatedAt:nowIso()};const exists=state.simulations.some(x=>x.id===saved.id);setSimulations(exists?state.simulations.map(x=>x.id===saved.id?saved:x):[saved,...state.simulations]);state.simulationEditor=null;navigateTo('pets');showToast(exists?t(state,'toast.simulationUpdated'):t(state,'toast.simulationSaved'));return;}
-  if(action==='select-creature'){const ed=state.simulationEditor,c=getCreatureById(button.dataset.id);if(c){ed.simulation.creatureId=c.id;ed.simulation.creatureCanonicalName=c.canonicalName;ed.simulation.creatureImageUrl=c.imageUrl;ed.creatureQuery=getCreatureName(c,state.language);ed.comboOpen=false;ed.errors={};emit();}return;}
-  if(action==='select-method'){state.simulationEditor.simulation.upMethod=button.dataset.method==='resources'?'combined':button.dataset.method;state.simulationEditor.resourcesOpen=state.simulationEditor.simulation.upMethod==='combined'||state.simulationEditor.resourcesOpen;state.simulationEditor.errors={};emit();return;}
-  if(action==='set-xp-bonus'){state.simulationEditor.simulation.xpBonusPercent=Math.min(1000,Math.max(0,Number(button.dataset.value)||0));state.simulationEditor.errors={};emit();return;}
-  if(action==='toggle-resources'){state.simulationEditor.resourcesOpen=!state.simulationEditor.resourcesOpen;emit();return;}
-  if(action==='select-resource'){const editor=state.simulationEditor;const item=findResourceCatalogItem(state.resourceCatalog,{resourceId:button.dataset.id});if(item){const rememberedXp=getRememberedResourceXp(item);editor.selectedResourceId=item.id;editor.resourceQuery=item.name;editor.resourceComboOpen=false;editor.resourceDraft={...(editor.resourceDraft||{}),xp:rememberedXp||item.xp||0,quantity:editor.resourceDraft?.quantity||1,unitPrice:editor.resourceDraft?.unitPrice||0,custom:false};emit();}return;}
-  if(action==='select-custom-resource'){const editor=state.simulationEditor;const rememberedXp=getRememberedResourceXp({resourceName:editor.resourceQuery});editor.selectedResourceId='__custom__';editor.resourceComboOpen=false;editor.resourceDraft={...(editor.resourceDraft||{}),xp:rememberedXp||editor.resourceDraft?.xp||0,quantity:editor.resourceDraft?.quantity||1,unitPrice:editor.resourceDraft?.unitPrice||0,custom:true};emit();return;}
-  if(action==='add-selected-resource'){const editor=state.simulationEditor,draft=editor.resourceDraft||{},isCustom=editor.selectedResourceId==='__custom__'||draft.custom,item=isCustom?null:findResourceCatalogItem(state.resourceCatalog,{resourceId:editor.selectedResourceId}),name=isCustom?String(editor.resourceQuery||'').trim():(item?.canonicalName||item?.name||''),displayName=isCustom?name:(item?.name||name),xp=Number(draft.xp),quantity=Math.max(0,Math.trunc(Number(draft.quantity)||0)),unitPrice=parseKamas(draft.unitPrice),error=button.closest('.collapsible-content')?.querySelector('[data-resource-error]');if((!isCustom&&!item)||!name||!Number.isFinite(xp)||xp<=0||quantity<=0){if(error)error.textContent=t(state,isCustom?'simulation.invalidCustomResource':'simulation.invalidResource');return;}const duplicate=editor.simulation.resourceLines.some(line=>(item?.ankamaId&&String(line.resourceAnkamaId)===String(item.ankamaId))||(item?.id&&line.resourceId===item.id)||normalizeResourceText(line.resourceName||line.customName||'')===normalizeResourceText(name));if(duplicate){if(error)error.textContent=t(state,'simulation.duplicateResource');return;}rememberResourceXp(item||{resourceName:name},xp);editor.simulation.resourceLines.push({id:createId('resource'),resourceId:item?.id||`custom-${createId('item')}`,resourceAnkamaId:item?.ankamaId??null,resourceName:name,resourceDisplayName:displayName,resourceImageUrl:item?.imageUrl||'',resourceLevel:item?.level??null,xpUnit:xp,customXp:xp,xpSource:item?.xpSource||'manual',custom:isCustom,quantity,unitPrice});editor.resourceQuery='';editor.selectedResourceId='';editor.resourceComboOpen=false;editor.resourceDraft={xp:0,quantity:1,unitPrice:0,custom:false};if(error)error.textContent='';emit();return;}
-  if(action==='delete-resource'){state.simulationEditor.simulation.resourceLines=state.simulationEditor.simulation.resourceLines.filter(x=>x.id!==button.dataset.id);emit();return;}
-  if(action==='fill-resource-required'){const ed=state.simulationEditor,calc=calculateSimulation(ed.simulation),computed=calc.resources.lines.find(x=>x.id===button.dataset.id),line=ed.simulation.resourceLines.find(x=>x.id===button.dataset.id);if(computed&&line&&computed.quantityNeededAlone>0){line.quantity=computed.quantityNeededAlone;emit();}return;}
+  if(action==='exit-editor'){state.simulationEditor=null;navigateTo('pet-simulations');return;}
+  if(action==='save-simulation'){const ed=state.simulationEditor,errors=validateSimulation(ed.simulation);if(Object.keys(errors).length){ed.errors=errors;ed.comboOpen=false;showToast(t(state,'toast.invalidStep'),'error');window.setTimeout(()=>app.querySelector('[aria-invalid="true"]')?.scrollIntoView({block:'center'}),80);return;}const calc=calculateSimulation(ed.simulation),creature=getCreatureById(ed.simulation.creatureId);const saved={...ed.simulation,upMethod:methodForPlan(calc.plan),name:generateSimulationName(ed.simulation),creatureType:creature.type,creatureCanonicalName:creature.canonicalName,creatureImageUrl:creature.imageUrl,unassociatedCreature:false,updatedAt:nowIso()};const exists=state.simulations.some(x=>x.id===saved.id);setSimulations(exists?state.simulations.map(x=>x.id===saved.id?saved:x):[saved,...state.simulations]);state.simulationEditor=null;navigateTo('pet-simulations');showToast(exists?t(state,'toast.simulationUpdated'):t(state,'toast.simulationSaved'));return;}  if(action==='select-creature'){const ed=state.simulationEditor,c=getCreatureById(button.dataset.id);if(c){ed.simulation.creatureId=c.id;ed.simulation.creatureType=c.type;ed.simulation.creatureCanonicalName=c.canonicalName;ed.simulation.creatureImageUrl=c.imageUrl;ed.creatureQuery=getCreatureName(c,state.language);ed.comboOpen=false;ed.errors={};emit();}return;}
+  if(action==='set-main-food'){state.simulationEditor.simulation.mainFood=button.dataset.id;emit();return;}
+  if(action==='set-auto-food'){state.simulationEditor.simulation.mainFood=AUTO_FOOD;emit();return;}
+  if(action==='remove-food'){const sim=state.simulationEditor.simulation;sim.foods=sim.foods.filter(x=>x.id!==button.dataset.id);delete sim.amounts[button.dataset.id];delete sim.priceSources[button.dataset.id];if(sim.mainFood===button.dataset.id)sim.mainFood=AUTO_FOOD;emit();return;}
+  if(action==='select-resource'){const editor=state.simulationEditor;const item=findResourceCatalogItem(state.resourceCatalog,{resourceId:button.dataset.id});if(item){addFood(item);editor.resourceQuery='';editor.resourceComboOpen=false;emit();}return;}
+  if(action==='select-custom-resource'){const editor=state.simulationEditor;const name=String(editor.resourceQuery||'').trim();if(name){addFood({name,xp:getRememberedResourceXp({resourceName:name})||0},{custom:true});editor.resourceQuery='';editor.resourceComboOpen=false;emit();}return;}
+  if(action==='simulate-resource'){const item=state.resourceCatalog.find(x=>String(x.ankamaId)===button.dataset.id);if(item){openEditor(newSimulation(),'new',{navigate:false});addFood(item);navigateTo('pet-simulation-new');}return;}
+  if(action==='explorer-more'){state.petExplorer.limit+=40;emit();return;}
+  if(action==='toggle-pet-sale'){const sim=state.simulations.find(x=>x.id===button.dataset.id);if(sim){const forSale=sim.status!=='awaiting_sale';setSimulations(state.simulations.map(x=>x.id===sim.id?{...x,status:forSale?'awaiting_sale':'ready',updatedAt:nowIso()}:x));showToast(t(state,forSale?'v3.inventory.forSale':'v3.inventory.removeFromSale'));}return;}
+  if(action==='backup-export'){exportBackup();return;}
   if(action==='refresh-resource-catalog'){void refreshResourceCatalog(state.language,true);return;}
   if(action==='simulation-details'){openModal({type:'simulation-details',id:button.dataset.id});return;}
   if(action==='delete-simulation'){const sim=state.simulations.find(x=>x.id===button.dataset.id);if(sim)openModal({type:'confirm',title:t(state,'simulations.deleteTitle'),text:t(state,'simulations.deleteText'),confirmAction:'delete-simulation',id:sim.id});return;}
@@ -770,6 +1033,8 @@ function handleAction(button) {
   if(action==='save-craft-project'||action==='save-craft-project-draft'||action==='save-craft-project-ready'||action==='save-craft-project-auto'){void saveCraftProject();return;}
   if(action==='exit-craft-editor'){state.craftEditor=null;navigateTo('crafts');return;}
   if(action==='craft-project-details'){openModal({type:'craft-project-details',id:button.dataset.id});return;}
+  // No editor, as alterações ainda não salvas precisam entrar na produção.
+  if(action==='complete-craft-project'&&state.craftEditor){void saveCraftProject({stay:true}).then(saved=>{if(!saved)return;if(saved.status!=='ready'){showToast(t(state,'v3.crafts.completeBlocked'),'error');return;}openModal({type:'complete-craft-project',id:saved.id,draft:{forSale:false}});});return;}
   if(action==='complete-craft-project'){const project=state.craftProjects.find(item=>item.id===button.dataset.id)||state.craftEditor?.project;if(project){const calc=calculateCraftProject(project,state.craftInventory);if(calc.readiness!=='ready'){showToast(t(state,'v3.crafts.completeBlocked'),'error');return;}openModal({type:'complete-craft-project',id:project.id,draft:{forSale:false}});}return;}
   if(action==='confirm-complete-craft'){completeCraftProject(state.modal.id,Boolean(state.modal.draft?.forSale));return;}
   if(action==='toggle-inventory-sale'){const item=state.craftInventory.find(row=>row.id===button.dataset.id);if(item){const updated=normalizeInventoryItem({...item,forSale:!item.forSale,updatedAt:nowIso()});setCraftInventory(state.craftInventory.map(row=>row.id===item.id?updated:row));addActivity({module:'crafts',action:'craft_for_sale',itemName:item.itemNameSnapshot,itemImage:item.itemImageSnapshot,entityId:item.id,route:'/crafts/estoque',value:updated.desiredSalePrice*updated.availableQuantity});}return;}
@@ -778,6 +1043,9 @@ function handleAction(button) {
   if(action==='inventory-adjust'){const item=state.craftInventory.find(row=>row.id===button.dataset.id);if(item)openModal({type:'inventory-adjust',id:item.id,draft:{quantity:item.quantity,reservedQuantity:item.reservedQuantity,desiredSalePrice:item.desiredSalePrice}});return;}
   if(action==='confirm-inventory-adjust'){confirmInventoryAdjust();return;}
   if(action==='global-sale-details'){openModal({type:button.dataset.module==='pets'?'sale-details':'craft-sale-details',id:button.dataset.id});return;}
+  if(action==='use-pet-community'){const sim=state.simulationEditor?.simulation,price=sim&&petCommunityFor(sim)[foodAnkamaId(sim,button.dataset.id)]?.unitPrice;if(price>0){setFoodPrice(sim,button.dataset.id,price,'community');emit();}return;}
+  if(action==='scan-pet-prices'){void scanPetCommunity();return;}
+  if(action==='refresh-community-prices'&&state.simulationEditor){void refreshPetCommunity({notify:true});return;}
   if(action==='use-community-price'){const line=findIngredientRecursive(state.craftEditor?.project.ingredients||[],button.dataset.id);if(line&&Number(line.communityPriceUnit)>0){line.unitMarketPrice=Number(line.communityPriceUnit);line.priceInputSource='community';line.priceDirty=false;line.priceSyncStatus='idle';emit();}return;}
   if(action==='refresh-community-prices'){void refreshCommunityPrices({overwriteManual:false});return;}
   if(action==='account-logout'){void performLogout(false);return;}
@@ -790,7 +1058,7 @@ function handleAction(button) {
   if(action==='consent-reject'){saveConsent({preferences:false,analytics:false,advertising:false});return;}
   if(action==='consent-save'){saveConsent(state.modal?.draft||state.consent);return;}
   if(action==='close-modal'){closeModal();return;}
-  if(action==='confirm-modal'){const m=state.modal;if(m.confirmAction==='delete-simulation'){setSimulations(state.simulations.filter(x=>x.id!==m.id));showToast(t(state,'toast.simulationDeleted'));}if(m.confirmAction==='delete-sale'){const removed=state.sales.find(x=>x.id===m.id);cancelSaleSync(m.id);const remaining=state.sales.filter(x=>x.id!==m.id);setSales(remaining);if(removed&&!remaining.some(x=>x.simulationId===removed.simulationId))setSimulations(state.simulations.map(sim=>sim.id===removed.simulationId?{...sim,status:'ready',updatedAt:nowIso()}:sim));showToast(t(state,'toast.saleDeleted'));}if(m.confirmAction==='delete-craft-project'){setCraftProjects(state.craftProjects.filter(project=>project.id!==m.id));showToast(t(state,'v3.crafts.projectDeleted'));}closeModal();return;}
+  if(action==='confirm-modal'){const m=state.modal;if(m.confirmAction==='restore-backup'){try{restoreBackup(m.backup);location.assign('/');}catch{closeModal();showToast(t(state,'backup.invalid'),'error');}return;}if(m.confirmAction==='delete-simulation'){setSimulations(state.simulations.filter(x=>x.id!==m.id));showToast(t(state,'toast.simulationDeleted'));}if(m.confirmAction==='delete-sale'){const removed=state.sales.find(x=>x.id===m.id);cancelSaleSync(m.id);const remaining=state.sales.filter(x=>x.id!==m.id);setSales(remaining);if(removed&&!remaining.some(x=>x.simulationId===removed.simulationId))setSimulations(state.simulations.map(sim=>sim.id===removed.simulationId?{...sim,status:'ready',updatedAt:nowIso()}:sim));showToast(t(state,'toast.saleDeleted'));}if(m.confirmAction==='delete-craft-project'){setCraftProjects(state.craftProjects.filter(project=>project.id!==m.id));showToast(t(state,'v3.crafts.projectDeleted'));}closeModal();return;}
   if(action==='copy-pix'){void copyPix();return;}
   if(action==='copy-name'){void copyText(button.dataset.name||'',t(state,'v303.nameCopied'));return;}
   if(action==='toggle-language'){const menu=app.querySelector('[data-language-menu]');menu.hidden=!menu.hidden;button.setAttribute('aria-expanded',String(!menu.hidden));return;}
@@ -802,7 +1070,7 @@ function confirmPetSale() {
   const modal=state.modal,sim=state.simulations.find(x=>x.id===modal.simulationId);if(!sim)return;const draft=modal.draft;
   if(!draft.soldAt||draft.salePrice<=0||draft.originCost<0||draft.upCost<0||!['Mercado HDV','Outro Jogador'].includes(draft.saleChannel)){showToast(t(state,'toast.invalidStep'),'error');return;}
   const soldDate=new Date(draft.soldAt);if(Number.isNaN(soldDate.getTime())){showToast(t(state,'toast.invalidStep'),'error');return;}
-  const calc=calculateSaleProfit(draft);const sale=normalizeSale({id:createId('sale'),simulationId:sim.id,simulationName:sim.name,creatureId:sim.creatureId,creatureCanonicalName:sim.creatureCanonicalName,creatureType:sim.creatureType,creatureImageUrl:sim.creatureImageUrl,originLevel:sim.originLevel,targetLevel:sim.targetLevel,xpBonusPercent:sim.xpBonusPercent||0,upMethod:sim.upMethod,resourceDetails:structuredClone(sim.resourceLines),originCost:draft.originCost,upCost:draft.upCost,salePrice:draft.salePrice,saleChannel:draft.saleChannel,fee:calc.fee,profit:calc.profit,soldAt:soldDate.toISOString(),syncStatus:'pending',apiRegistered:false,apiRow:null,syncStarted:false,createdAt:nowIso()});
+  const calc=calculateSaleProfit(draft);const sale=normalizeSale({id:createId('sale'),simulationId:sim.id,simulationName:sim.name,creatureId:sim.creatureId,creatureCanonicalName:sim.creatureCanonicalName,creatureType:sim.creatureType,creatureImageUrl:sim.creatureImageUrl,originLevel:sim.originLevel,targetLevel:sim.targetLevel,xpBonusPercent:sim.xpBonusPercent||0,upMethod:sim.upMethod,resourceDetails:planResourceLines(calculateSimulation(sim).plan),originCost:draft.originCost,upCost:draft.upCost,salePrice:draft.salePrice,saleChannel:draft.saleChannel,fee:calc.fee,profit:calc.profit,soldAt:soldDate.toISOString(),syncStatus:'pending',apiRegistered:false,apiRow:null,syncStarted:false,createdAt:nowIso()});
   setSales([sale,...state.sales]);setSimulations(state.simulations.map(x=>x.id===sim.id?{...x,status:'sold',lastSaleAt:sale.createdAt,updatedAt:nowIso()}:x));closeModal();showToast(t(state,'sales.registered'));startSync(sale);
 }
 
@@ -831,6 +1099,7 @@ app.addEventListener('submit',event=>{
   if(!form)return;
   event.preventDefault();
   const type=form.dataset.form;
+  if(type==='builder'){void sendBuilderMessage(state,form.querySelector('[data-builder-input]').value,emitBuilder);return;}
   if(type==='login'){void performLogin();return;}
   if(type==='register'){void performRegister();return;}
   if(type==='forgot-password'){void performForgotPassword();return;}
@@ -840,7 +1109,7 @@ app.addEventListener('submit',event=>{
 });
 
 app.addEventListener('focusin',event=>{
-  if(event.target.matches('[data-field="creatureQuery"]')&&state.simulationEditor&&!state.simulationEditor.comboOpen){state.simulationEditor.comboOpen=true;emit();return;}
+  if(event.target.matches('[data-field="creatureQuery"]')&&state.simulationEditor&&!state.simulationEditor.comboOpen){state.simulationEditor.comboOpen=true;state.simulationEditor.creatureQuery='';emit();return;}
   if(event.target.matches('[data-resource-picker-search]')&&state.simulationEditor&&!state.simulationEditor.resourceComboOpen){state.simulationEditor.resourceComboOpen=true;emit();return;}
   if(event.target.matches('[data-craft-item-search]')&&state.craftEditor){state.craftEditor.searchOpen=true;const list=app.querySelector('#craft-item-options');if(list)list.hidden=false;}
 });
@@ -848,14 +1117,25 @@ app.addEventListener('focusin',event=>{
 app.addEventListener('click',event=>{
   if(event.target.classList.contains('modal-backdrop')){closeModal();return;}
   const actionNode=event.target.closest('[data-action]');if(actionNode)handleAction(actionNode);
+  const editor=state.simulationEditor;
+  if(editor&&(editor.comboOpen||editor.resourceComboOpen)&&!event.target.closest('.creature-combobox,.resource-combobox')){editor.comboOpen=false;editor.resourceComboOpen=false;emit();}
   if(!event.target.closest('.language')){const menu=app.querySelector('[data-language-menu]');if(menu)menu.hidden=true;}
 });
 
+// "toggle" não propaga: por isso a captura.
+app.addEventListener('toggle',event=>{
+  const id=event.target.dataset?.disclosure;
+  if(id)state.disclosures[id]=event.target.open;
+},true);
+
 app.addEventListener('change',event=>{
   const accountField=event.target.dataset.accountField;if(accountField){updateAccountDraft(accountField,event.target);}
-  const field=event.target.dataset.field;if(field)updateEditorField(field,event.target.value,true);
-  const resourceField=event.target.dataset.resourceField;if(resourceField&&state.simulationEditor){const line=state.simulationEditor.simulation.resourceLines.find(x=>x.id===event.target.dataset.id);if(line){if(resourceField==='quantity')line.quantity=Math.max(1,Math.trunc(Number(event.target.value)||1));else if(resourceField==='unitPrice')line.unitPrice=parseKamas(event.target.value);else if(resourceField==='customXp'){line.customXp=Math.max(0,Number(String(event.target.value).replace(',','.'))||0);line.xpUnit=line.customXp;line.xpSource='manual';rememberResourceXp(line,line.customXp);}emit();}}
-  const resourceDraftField=event.target.dataset.resourceDraft;if(resourceDraftField&&state.simulationEditor){const draft=state.simulationEditor.resourceDraft||(state.simulationEditor.resourceDraft={xp:0,quantity:1,unitPrice:0,custom:false});if(resourceDraftField==='xp')draft.xp=Math.max(0,Number(String(event.target.value).replace(',','.'))||0);else if(resourceDraftField==='quantity')draft.quantity=Math.max(1,Math.trunc(Number(event.target.value)||1));else if(resourceDraftField==='unitPrice')draft.unitPrice=parseKamas(event.target.value);emit();}
+  const field=event.target.dataset.field;if(field&&field!=='creatureQuery')updateEditorField(field,event.target.value,true);
+  if(event.target.dataset.foodField){updateFood(event.target);emit();if(event.target.dataset.foodField==='price')publishFood(event.target.dataset.id);}
+  if(event.target.dataset.petPrice){const bag=event.target.dataset.petPrice==='bag',price=parseKamas(event.target.value);rememberPetPrice(event.target.dataset.petPrice,price);emit();void publishPetPrice({ankamaId:bag?BAG_ANKAMA_ID:RATION_ANKAMA_ID,name:t({language:'pt-BR'},bag?'simulation.kolitokenBag':'simulation.marketFood'),price,bag});}
+  if(event.target.matches('[data-explorer-price]')){const id=event.target.dataset.id,price=parseKamas(event.target.value);rememberPetPrice(id,price);emit();void publishPetPrice({ankamaId:Number(id),name:state.resourceCatalog.find(item=>String(item.ankamaId)===id)?.name||'',price});}
+  if(event.target.dataset.explorerField){updateExplorerField(event.target.dataset.explorerField,event.target.value);emit();}
+  if(event.target.matches('[data-backup-import]')){void importBackup(event.target.files?.[0]);}
   const saleField=event.target.dataset.saleField;if(saleField&&state.modal?.type==='register-sale'){state.modal.draft[saleField]=['originCost','upCost','salePrice'].includes(saleField)?parseKamas(event.target.value):event.target.value;emit();}
   const craftField=event.target.dataset.craftField;if(craftField)updateCraftField(craftField,event.target.value,true);
   const ingredientField=event.target.dataset.craftIngredientField;if(ingredientField&&state.craftEditor){const line=findIngredientById(state.craftEditor.project.ingredients,event.target.dataset.id);if(line){if(ingredientField==='unitMarketPrice')markIngredientPriceEdited(line,parseKamas(event.target.value));else if(ingredientField==='useStockQuantity')line[ingredientField]=parseKamas(event.target.value);else line[ingredientField]=event.target.value;line.totalQuantity=line.quantityPerUnit*state.craftEditor.project.desiredQuantity;if(!['finalized','cancelled'].includes(state.craftEditor.project.status))state.craftEditor.project.status='draft';if(ingredientField==='acquisitionMode'&&line.acquisitionMode==='craft'){void loadSubrecipe(line.id,{openPlanner:true});return;}if(ingredientField==='acquisitionMode'&&line.acquisitionMode!=='craft'&&state.modal?.type==='craft-recipe-planner'){closeModal();return;}emit();if(ingredientField==='unitMarketPrice')void publishIngredientPrice(line);}}
@@ -872,10 +1152,11 @@ app.addEventListener('change',event=>{
 
 app.addEventListener('input',event=>{
   const accountField=event.target.dataset.accountField;if(accountField){updateAccountDraft(accountField,event.target);return;}
-  if(event.target.matches('[data-resource-picker-search]')&&state.simulationEditor){const editor=state.simulationEditor;editor.resourceQuery=event.target.value;editor.resourceComboOpen=true;editor.selectedResourceId='';editor.resourceDraft={...(editor.resourceDraft||{}),xp:0,custom:false};updatePetResourceListDom();return;}
+  if(event.target.matches('[data-builder-input]')){state.builder.input=event.target.value;return;}
+  if(event.target.matches('[data-resource-picker-search]')&&state.simulationEditor){const editor=state.simulationEditor;editor.resourceQuery=event.target.value;editor.resourceComboOpen=true;updatePetResourceListDom();return;}
   const field=event.target.dataset.field;if(field==='creatureQuery'&&state.simulationEditor){state.simulationEditor.creatureQuery=event.target.value;state.simulationEditor.comboOpen=true;updatePetCreatureListDom();return;}if(field&&state.simulationEditor){updateEditorField(field,event.target.value,false);return;}
-  const resourceField=event.target.dataset.resourceField;if(resourceField&&state.simulationEditor){const line=state.simulationEditor.simulation.resourceLines.find(x=>x.id===event.target.dataset.id);if(line){if(resourceField==='quantity')line.quantity=Math.max(1,Math.trunc(Number(event.target.value)||1));else if(resourceField==='unitPrice')line.unitPrice=parseKamas(event.target.value);else if(resourceField==='customXp'){line.customXp=Math.max(0,Number(String(event.target.value).replace(',','.'))||0);line.xpUnit=line.customXp;line.xpSource='manual';rememberResourceXp(line,line.customXp);}return;}}
-  const resourceDraftField=event.target.dataset.resourceDraft;if(resourceDraftField&&state.simulationEditor){const draft=state.simulationEditor.resourceDraft||(state.simulationEditor.resourceDraft={xp:0,quantity:1,unitPrice:0,custom:false});if(resourceDraftField==='xp')draft.xp=Math.max(0,Number(String(event.target.value).replace(',','.'))||0);else if(resourceDraftField==='quantity')draft.quantity=Math.max(1,Math.trunc(Number(event.target.value)||1));else if(resourceDraftField==='unitPrice')draft.unitPrice=parseKamas(event.target.value);return;}
+  if(event.target.dataset.foodField){updateFood(event.target);refreshPetSummary();return;}
+  if(event.target.dataset.explorerField==='query'){updateExplorerField('query',event.target.value);window.clearTimeout(explorerTimer);explorerTimer=window.setTimeout(emit,220);return;}
   const saleField=event.target.dataset.saleField;if(saleField&&state.modal?.type==='register-sale'){state.modal.draft[saleField]=['originCost','upCost','salePrice'].includes(saleField)?parseKamas(event.target.value):event.target.value;return;}
   if(event.target.matches('[data-craft-item-search]')&&state.craftEditor){state.craftEditor.itemQuery=event.target.value;state.craftEditor.searchOpen=true;scheduleCraftSearch(event.target.value);return;}
   const craftField=event.target.dataset.craftField;if(craftField){updateCraftField(craftField,event.target.value,false);return;}
@@ -889,6 +1170,7 @@ app.addEventListener('input',event=>{
 
 app.addEventListener('keydown',event=>{
   if(event.key==='Escape'&&state.modal){closeModal();return;}
+  if(event.key==='Escape'&&(state.simulationEditor?.comboOpen||state.simulationEditor?.resourceComboOpen)){event.target.blur();state.simulationEditor.comboOpen=false;state.simulationEditor.resourceComboOpen=false;emit();return;}
   if(state.modal&&event.key==='Tab'){const modal=app.querySelector('.modal');const focusable=[...modal.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),a[href]')];if(focusable.length){const first=focusable[0],last=focusable[focusable.length-1];if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}}
   if(event.target.matches('[data-field="creatureQuery"]')&&event.key==='ArrowDown'){event.preventDefault();app.querySelector('#creature-options .combobox-option')?.focus();return;}
   if(event.target.matches('[data-resource-picker-search]')&&event.key==='ArrowDown'){event.preventDefault();app.querySelector('#resource-options .combobox-option')?.focus();return;}

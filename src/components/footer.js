@@ -11,6 +11,7 @@ export function renderFooter(state) {
     <div class="footer-brand"><img src="/assets/brand/logo-header.webp" alt="Dofus4Business"><div><strong>Dofus4Business</strong><small>v${APP_VERSION}</small></div></div>
     <div class="footer-actions">
       <button class="button ghost" data-action="open-information" data-section="about">${escapeHtml(t(state,'footer.transparency'))}</button>
+      <button class="button ghost" data-action="route" data-route="settings">${escapeHtml(t(state,'backup.title'))}</button>
       <button class="button ghost" data-action="open-consent">${escapeHtml(t(state,'footer.privacyPreferences'))}</button>
       <button class="button ghost" data-action="open-support">${escapeHtml(t(state,'support.button'))}</button>
     </div>

@@ -28,8 +28,8 @@ export const dataSources = {
   feedingXp: { id: 'feedingXp',
     category: 'XP e alimentação',
     datum: 'Curva de XP e recursos confirmados',
-    source: 'Guia de evolução por recursos fornecido pelo proprietário',
-    url: 'https://docs.google.com/spreadsheets/d/1jOI2i3c--spHPy9rZHzz55LS53gcV8XFURRKsPcsRG0/edit?usp=sharing',
+    source: 'DofusDB API, conferida com a planilha do projeto',
+    url: 'https://api.dofusdb.fr/',
     license: 'Dados referenciais; verificar atualizações do jogo.',
     checkedAt: CATALOG_UPDATED_AT
   },

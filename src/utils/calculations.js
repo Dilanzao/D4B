@@ -6,6 +6,7 @@ import {
 } from '../config/app.js';
 import { MAX_LEVEL, XP_BY_LEVEL } from '../data/xpTable.js';
 import { getFeedingResourceById } from '../data/feedingResources.js';
+import { calculatePlan } from '../modules/pets/petPlan.js';
 
 const finite = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -178,6 +179,7 @@ export function calculateSimulation(simulation) {
   const xpBonusPercent = getXpBonusPercent(simulation);
   const xpMultiplier = getXpMultiplier(simulation);
   const resources = calculateResourceMethod(simulation.resourceLines, xpNeeded, xpBonusPercent);
+  const plan = calculatePlan(simulation, xpNeeded, xpBonusPercent);
   const methods = {
     vitaminizedFood: calculateRationMethod(xpNeeded, simulation.marketFoodPrice, xpBonusPercent),
     kolitokenBag: calculateBagMethod(xpNeeded, simulation.bagPrice, xpBonusPercent),
@@ -191,11 +193,7 @@ export function calculateSimulation(simulation) {
       xpBonusPercent
     )
   };
-  const viable = ['vitaminizedFood','kolitokenBag','combined'].map((id) => methods[id]).filter((method) => method.sufficient && (method.totalCost > 0 || xpNeeded === 0));
-  const cheapest = [...viable].sort((a, b) => a.totalCost - b.totalCost)[0]?.id ?? null;
-  const selectedMethod = simulation.upMethod === 'resources' ? 'combined' : simulation.upMethod;
-  const selected = methods[selectedMethod] || null;
-  const upCost = selected?.sufficient ? integer(selected.totalCost) : 0;
+  const upCost = plan.complete ? integer(plan.cost) : 0;
   const originCost = integer(simulation.originCost);
   const additionalCosts = integer(simulation.additionalCosts);
   const operationCost = originCost + upCost + additionalCosts;
@@ -205,7 +203,7 @@ export function calculateSimulation(simulation) {
   const netRevenue = salePrice - fee;
   const estimatedProfit = netRevenue - operationCost;
   const breakEven = feePercent > 0 ? Math.ceil(operationCost / (1 - feePercent / 100)) : operationCost;
-  return { xpNeeded, xpBonusPercent, xpMultiplier, methods, cheapest, selected, upCost, originCost, additionalCosts, operationCost, salePrice, feePercent, fee, netRevenue, estimatedProfit, breakEven, resources };
+  return { xpNeeded, xpBonusPercent, xpMultiplier, methods, plan, upCost, originCost, additionalCosts, operationCost, salePrice, feePercent, fee, netRevenue, estimatedProfit, breakEven, resources };
 }
 
 export function generateLevelRows(simulation, calculation = calculateSimulation(simulation)) {

@@ -31,7 +31,6 @@ export function renderLoginPage(state) {
       <label>${escapeHtml(t(state,'v310.account.email'))}<input type="email" autocomplete="email" required data-account-field="login.email" value="${value(draft.email)}"></label>
       <label>${escapeHtml(t(state,'v310.account.password'))}<input type="password" autocomplete="current-password" required data-account-field="login.password" value="${value(draft.password)}"></label>
       <label class="check-row"><input type="checkbox" data-account-field="login.rememberConnected" ${draft.rememberConnected?'checked':''}><span>${escapeHtml(t(state,'v310.account.keepConnected'))}</span></label>
-      ${passwordWarning(state)}
       <button class="button primary account-submit" type="submit" ${state.accountUi?.busy?'disabled':''}>${icon('user',17)} ${escapeHtml(t(state,'v310.account.enter'))}</button>
       <div class="account-links"><button type="button" data-action="route" data-route="forgot-password">${escapeHtml(t(state,'v310.account.forgotPassword'))}</button><button type="button" data-action="route" data-route="register">${escapeHtml(t(state,'v310.account.createAccount'))}</button></div>
     </form>`);
@@ -46,7 +45,6 @@ export function renderRegisterPage(state) {
       <label>${escapeHtml(t(state,'v310.account.server'))}<select required data-account-field="register.serverId">${serverOptions(state,draft.serverId)}</select></label>
       <label>${escapeHtml(t(state,'v310.account.password'))}<input type="password" autocomplete="new-password" minlength="10" required data-account-field="register.password" value="${value(draft.password)}"></label>
       <label>${escapeHtml(t(state,'v310.account.confirmPassword'))}<input type="password" autocomplete="new-password" minlength="10" required data-account-field="register.confirmPassword" value="${value(draft.confirmPassword)}"></label>
-      ${passwordWarning(state)}
       <button class="button primary account-submit" type="submit" ${state.accountUi?.busy?'disabled':''}>${icon('plus',17)} ${escapeHtml(t(state,'v310.account.createAccount'))}</button>
       <div class="account-links"><button type="button" data-action="route" data-route="login">${escapeHtml(t(state,'v310.account.alreadyHaveAccount'))}</button></div>
     </form>`);
@@ -79,7 +77,6 @@ export function renderResetPasswordPage(state) {
     <form class="account-form" data-form="reset-password">
       <label>${escapeHtml(t(state,'v310.account.newPassword'))}<input type="password" autocomplete="new-password" minlength="10" required data-account-field="reset.password" value="${value(draft.password)}"></label>
       <label>${escapeHtml(t(state,'v310.account.confirmPassword'))}<input type="password" autocomplete="new-password" minlength="10" required data-account-field="reset.confirmPassword" value="${value(draft.confirmPassword)}"></label>
-      ${passwordWarning(state)}
       <button class="button primary account-submit" type="submit" ${state.accountUi?.busy?'disabled':''}>${escapeHtml(t(state,'v310.account.saveNewPassword'))}</button>
     </form>`);
 }

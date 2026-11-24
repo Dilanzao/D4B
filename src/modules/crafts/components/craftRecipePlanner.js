@@ -3,6 +3,7 @@ import { findIngredientById } from '../utils/craftRecipeTree.js';
 import { professionLabel } from '../utils/craftProfession.js';
 import { formatKamas, formatNumber } from '../../../utils/currency.js';
 import { copyableImage, escapeHtml, icon, t } from '../../../components/common.js';
+import { missingPriceError } from './ingredientFeedback.js';
 import { renderCommunityPriceBox } from './communityPriceUi.js';
 
 function findCalculated(lines = [], id) {
@@ -34,13 +35,13 @@ function recipeLine(state, line) {
   return `<article class="recipe-planner-line" data-ingredient-id="${escapeHtml(line.id)}">
     <div class="recipe-planner-item">${copyableImage(line.imageSnapshot,line.nameSnapshot,'ingredient-thumb','/assets/placeholders/item-fallback.svg',t(state,'v303.copyItemName',{name:line.nameSnapshot}))}<div><strong>${escapeHtml(line.nameSnapshot)}</strong><small>${formatNumber(line.required || line.totalQuantity,state.language)} ${escapeHtml(t(state,'v3.crafts.total'))}</small>${professionBadge(state,line)}</div></div>
     <label class="field compact-field"><span>${escapeHtml(t(state,'v3.crafts.acquisition'))}</span><select class="select" data-craft-ingredient-field="acquisitionMode" data-id="${escapeHtml(line.id)}"><option value="buy" ${line.acquisitionMode==='buy'?'selected':''}>${escapeHtml(t(state,'v3.crafts.buy'))}</option><option value="drop" ${line.acquisitionMode==='drop'?'selected':''}>${escapeHtml(t(state,'v3.crafts.drop'))}</option>${canCraft?`<option value="craft" ${line.acquisitionMode==='craft'?'selected':''}>${escapeHtml(t(state,'v3.crafts.manufacture'))}</option>`:''}</select></label>
-    <label class="field compact-field"><span>${escapeHtml(t(state,'v310.prices.observedPrice'))}</span><input class="input" inputmode="numeric" data-craft-ingredient-field="unitMarketPrice" data-id="${escapeHtml(line.id)}" value="${line.unitMarketPrice||''}"></label>
+    <label class="field compact-field"><span>${escapeHtml(t(state,'v310.prices.observedPrice'))}</span><input class="input" inputmode="numeric" data-craft-ingredient-field="unitMarketPrice" data-id="${escapeHtml(line.id)}" value="${line.unitMarketPrice||''}" aria-invalid="${Boolean(missingPriceError(state,line))}">${missingPriceError(state,line)}</label>
     <label class="field compact-field"><span>${escapeHtml(t(state,'v3.crafts.stockUse'))} <small>${formatNumber(line.stockAvailable||0,state.language)}</small></span><div class="input-with-action"><input class="input" inputmode="numeric" data-craft-ingredient-field="useStockQuantity" data-id="${escapeHtml(line.id)}" value="${line.useStockQuantity||''}" max="${stockMax}"><button type="button" class="mini-action" data-action="use-max-stock" data-id="${escapeHtml(line.id)}" ${stockMax<=0?'disabled':''}>${escapeHtml(t(state,'v3.crafts.maxStock'))}</button></div></label>
     <div class="ingredient-cost"><span>${escapeHtml(t(state,'v3.sales.cost'))}</span><strong>${formatKamas(line.cost||0,state.language)}</strong></div>
     <div class="ingredient-actions">${canCraft?`<button class="button ghost compact" data-action="open-craft-recipe-level" data-id="${escapeHtml(line.id)}" ${line.subRecipeStatus==='loading'?'disabled':''}>${icon('chevron',15)} ${escapeHtml(t(state,'v303.openRecipeLevel'))}</button>`:''}</div>
     ${renderCommunityPriceBox(state,line)}
     ${comparison(state,line)}
-    ${line.missing?.length?`<div class="ingredient-warning">${icon('alert',14)} ${escapeHtml(line.missing.some(item=>item.reason==='price')?t(state,'v3.crafts.priceRequired'):t(state,'v3.crafts.recipeRequired'))}</div>`:''}
+    ${line.missing?.length&&!missingPriceError(state,line)?`<div class="ingredient-warning">${icon('alert',14)} ${escapeHtml(t(state,'v3.crafts.recipeRequired'))}</div>`:''}
   </article>`;
 }
 

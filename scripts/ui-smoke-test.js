@@ -35,6 +35,8 @@ const simulation = {
 };
 
 const baseState = {
+  petPrices: { ration: 0, bag: 0, resources: {} },
+  petCommunity: { serverId: '', prices: {}, sync: {}, status: 'idle', scan: 'idle', progress: 0 },
   language: 'pt-BR',
   resourceCatalog: catalog,
   resourceCatalogStatus: 'ready',
@@ -49,7 +51,8 @@ const baseState = {
 
 const creatureHtml = renderSimulationEditor(baseState);
 const creatureOptions = (creatureHtml.match(/data-action="select-creature"/g) || []).length;
-assert.equal(creatureOptions, creatureCatalog.filter(item => item.type === 'Mascote').length);
+// A busca única reúne mascotes e montascotes.
+assert.equal(creatureOptions, creatureCatalog.length);
 assert.ok(creatureOptions > 100, `Expected all mascotes, received ${creatureOptions}.`);
 
 const resourceState = structuredClone(baseState);
@@ -58,7 +61,10 @@ const resourceHtml = renderSimulationEditor(resourceState);
 assert.equal((resourceHtml.match(/data-resource-picker-search/g) || []).length, 1);
 assert.equal((resourceHtml.match(/data-action="select-resource"/g) || []).length, catalog.length);
 assert.equal((resourceHtml.match(/data-method="resources"/g) || []).length, 0);
-assert.equal((resourceHtml.match(/data-method="combined"/g) || []).length, 1);
+// Ração (com suas origens) e recursos ficam na mesma lista, sempre presentes.
+assert.equal((resourceHtml.match(/data-price="ration"/g) || []).length, 1);
+assert.equal((resourceHtml.match(/data-price="bag"/g) || []).length, 1);
+assert.match(resourceHtml, /data-pet-summary/);
 
 resourceState.simulationEditor.resourceQuery = 'Recurso totalmente personalizado';
 const customHtml = renderSimulationEditor(resourceState);

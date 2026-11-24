@@ -1,3 +1,4 @@
+import { MARKET_FEE_PERCENT } from '../../../config/app.js';
 import { calculateCraftProject } from '../utils/craftCalculations.js';
 
 export function adaptCraftSale(sale = {}) {
@@ -40,7 +41,8 @@ export function getCraftModuleMetrics(state) {
   const projectCalculations = new Map(projects.map(project => [project.id, calculateCraftProject(project, inventory)]));
   const investedValue = active.reduce((sum, project) => sum + (projectCalculations.get(project.id)?.totalCost || project.totalCost || project.financialCost || 0), 0) + inventoryValue;
   const potentialRevenue = awaitingSaleValue;
-  const potentialProfit = awaitingSaleValue - awaitingCost;
+  // O estoque ainda não tem canal definido: considera a taxa do HDV (2%) para não superestimar.
+  const potentialProfit = awaitingSaleValue - Math.round(awaitingSaleValue * MARKET_FEE_PERCENT / 100) - awaitingCost;
   const realizedRevenue = sales.reduce((sum, sale) => sum + sale.netRevenue, 0);
   const realizedProfit = sales.reduce((sum, sale) => sum + sale.realizedProfit, 0);
   const alerts = [

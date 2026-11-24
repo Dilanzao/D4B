@@ -3,7 +3,9 @@ import {
   getFeedingResourceName,
   normalizeResourceText
 } from '../data/feedingResources.js';
-import { enrichResourceWithRememberedXp } from './resourceXpMemoryService.js';
+import { PET_XP, isUncertainXp } from '../data/petXp.js';
+import { SHEET_CONSUMABLES } from '../data/sheetFeedingXp.js';
+import { enrichResourceWithRememberedXp, getRememberedResourceXp } from './resourceXpMemoryService.js';
 
 const API_BASE = 'https://api.dofusdu.de/dofus3/v1';
 const CACHE_PREFIX = 'd4b_dofusdude_resources_v1';
@@ -14,6 +16,8 @@ const LOCALE_TO_API = {
   'en-US': 'en',
   'es-ES': 'es'
 };
+
+export const getFeedingXp = ankamaId => PET_XP[ankamaId] || 0;
 
 const memoryCache = new Map();
 
@@ -174,12 +178,20 @@ export async function loadDofusDudeResourceCatalog(language = 'pt-BR', options =
       .map((name) => [normalizeResourceText(name), item]))
   );
 
-  const catalog = localizedItems.map((localized) => {
+  // Essências e outros consumíveis que também alimentam pets.
+  const consumables = SHEET_CONSUMABLES.map(item => ({ ...item, name: item.names[language] || item.names['pt-BR'] }));
+  for (const item of SHEET_CONSUMABLES) ptById.set(String(item.ankamaId), { ...item, name: item.names['pt-BR'] });
+  const catalog = [...localizedItems, ...consumables].map((localized) => {
     const portuguese = ptById.get(String(localized.ankamaId)) || localized;
     const normalizedPtName = normalizeResourceText(portuguese.name);
     const known = knownEmbeddedByName.get(normalizedPtName);
-    const xp = xpByName.get(normalizedPtName);
-    return enrichResourceWithRememberedXp({
+    const uncertain = isUncertainXp(localized.ankamaId);
+    const confirmed = uncertain ? getRememberedResourceXp({ resourceAnkamaId: localized.ankamaId, resourceName: portuguese.name }) : 0;
+    const officialXp = confirmed || getFeedingXp(localized.ankamaId);
+    const xp = officialXp || xpByName.get(normalizedPtName);
+    // A XP do jogo prevalece; a memória do usuário só completa itens sem valor conhecido.
+    const enrich = officialXp ? (item => item) : enrichResourceWithRememberedXp;
+    return enrich({
       id: `dofusdude-${localized.ankamaId}`,
       ankamaId: localized.ankamaId,
       canonicalName: portuguese.name,
@@ -187,7 +199,7 @@ export async function loadDofusDudeResourceCatalog(language = 'pt-BR', options =
       level: localized.level || portuguese.level || 0,
       imageUrl: localized.imageUrl || portuguese.imageUrl || '',
       xp: Number.isFinite(xp) && xp > 0 ? xp : null,
-      xpSource: known ? 'embedded' : null,
+      xpSource: uncertain ? (confirmed ? 'manual' : 'sheet') : officialXp ? 'game' : known ? 'embedded' : null,
       source: 'dofusdude'
     });
   }).filter((item) => item.name && item.id);

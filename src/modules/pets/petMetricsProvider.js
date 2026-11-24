@@ -12,7 +12,7 @@ export function getPetModuleMetrics(state) {
   const calculations = active.map(sim => ({ sim, calc: safeCalc(sim) })).filter(row => row.calc);
   const investedValue = calculations.reduce((sum, row) => sum + (row.calc.originCost || 0) + (row.calc.upCost || 0) + (row.calc.additionalCosts || 0), 0);
   const potentialRevenue = calculations.reduce((sum, row) => sum + (row.calc.salePrice || 0), 0);
-  const potentialProfit = calculations.reduce((sum, row) => sum + (row.calc.profit || 0), 0);
+  const potentialProfit = calculations.reduce((sum, row) => sum + (row.calc.salePrice > 0 && row.calc.plan.complete ? row.calc.estimatedProfit : 0), 0);
   const awaiting = calculations.filter(row => row.sim.status === 'awaiting_sale');
   const awaitingSaleValue = awaiting.reduce((sum, row) => sum + (row.calc.salePrice || 0), 0);
   const realizedRevenue = sales.reduce((sum, sale) => sum + sale.netRevenue, 0);

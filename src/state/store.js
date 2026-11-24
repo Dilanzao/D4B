@@ -3,6 +3,9 @@ import { applyConsent, preferenceStorageAllowed } from '../services/consentServi
 import { getEmbeddedResourceCatalog } from '../services/resourceCatalogService.js';
 import { craftStorage, loadCraftData } from '../modules/crafts/services/craftStorageService.js';
 import { STORAGE_SCHEMA_VERSION } from '../config/app.js';
+import { loadPetPrices } from '../modules/pets/petPriceMemory.js';
+import { emptyPetCommunity } from '../modules/pets/petCommunity.js';
+import { createBuilderState } from '../modules/builder/builderController.js';
 import { loadAccountSession } from '../services/accountSessionService.js';
 import { isAccountApiConfigured } from '../config/accountApi.js';
 
@@ -24,6 +27,11 @@ export const state = {
   craftEditor: null,
   modal: null,
   toast: null,
+  disclosures: {},
+  petPrices: loadPetPrices(accountInitial?.user?.serverId || ''),
+  petCommunity: emptyPetCommunity(accountInitial?.user?.serverId || ''),
+  builder: createBuilderState(),
+  petExplorer: { query: '', minXp: 0, maxLevel: 0, sort: 'xp', limit: 40 },
   globalFilters: { module: 'all', period: 'all', from: '', to: '' },
   dashboardFilters: {
     period: 'all', from: '', to: '', type: 'all', creature: 'all', channel: 'all', method: 'all', result: 'all', grouping: 'month', petMetric: 'quantity', channelMetric: 'quantity', methodMetric: 'averageCost'

@@ -12,7 +12,7 @@ const CAP = { ap: 12, mp: 6, range: 6, res: 50 };
 const TYPICAL = { wisdom: 400, prospecting: 350, initiative: 4000, lock: 110, dodge: 110, heals: 150, critical: 70, apParry: 110, mpParry: 110, apReduction: 110, mpReduction: 110, pushDamage: 250, summons: 5, pods: 1500, range: 5, criticalRes: 100, pushRes: 150, trapDamage: 60, reflect: 100 };
 
 export function defaultIntent() {
-  return { level: 200, elements: ['strength'], damage: 1, survival: 0.55, extras: {}, targets: {}, noCrit: false, roll: 'average', distance: 'any', craftable: false, noDofus: false, preferOwned: false, locked: [], banned: [], breed: 0, scroll: null, exo: { ap: false, mp: false, range: false }, forge: {}, profile: null };
+  return { level: 200, elements: ['strength'], damage: 1, survival: 0.55, extras: {}, targets: {}, noCrit: false, roll: 'average', distance: 'any', craftable: false, noDofus: false, preferOwned: false, locked: [], banned: [], breed: 0, scroll: null, exo: { ap: false, mp: false, range: false }, forge: {}, points: {}, profile: null };
 }
 
 function vector(effects, roll) {
@@ -49,14 +49,27 @@ export function pointsToStat(points) {
 // Pergaminhos: o que a pessoa disse ou, sem dizer, 100 a partir do nível 100.
 export const scrollOf = intent => intent.scroll ?? (intent.level >= 100 ? 100 : 0);
 
+// Pontos de característica: os fixados pela pessoa e o resto, sozinho, no elemento (ou em vida, para tanque).
+export const POINT_STATS = ['vitality', 'wisdom', 'strength', 'intelligence', 'chance', 'agility'];
+export const pointsValue = (key, points) => (key === 'vitality' ? points : key === 'wisdom' ? Math.floor(points / 3) : pointsToStat(points));
+export function allocatePoints(intent) {
+  const total = (intent.level - 1) * 5; let left = total;
+  const fixed = intent.points || {}; const used = {};
+  for (const key of POINT_STATS) { used[key] = Math.min(left, Math.max(0, Math.trunc(fixed[key] ?? 0))); left -= used[key]; }
+  const tank = intent.damage < 0.4 || !intent.elements.length;
+  const auto = (tank ? ['vitality'] : intent.elements).filter(key => fixed[key] === undefined);
+  for (const key of auto) used[key] += Math.floor(left / auto.length);
+  if (auto.length) left %= auto.length;
+  return { total, used, left };
+}
+
 function baseStats(intent) {
   const base = new Float64Array(N);
   base[S.ap] = intent.level >= 100 ? 7 : 6;
   base[S.mp] = 3; base[S.prospecting] = 100;
-  const points = (intent.level - 1) * 5;
+  const spent = allocatePoints(intent);
   for (const key of ['strength', 'intelligence', 'chance', 'agility', 'vitality', 'wisdom']) base[S[key]] += scrollOf(intent);
-  if (intent.damage < 0.4 || !intent.elements.length) base[S.vitality] += points;
-  else for (const element of intent.elements) base[S[element]] += pointsToStat(Math.floor(points / intent.elements.length));
+  for (const key of POINT_STATS) base[S[key]] += pointsValue(key, spent.used[key]);
   return base;
 }
 
@@ -324,23 +337,25 @@ export function describeBuild(gear, ids, rawIntent) {
   const sets = gear.sets.filter(set => (ctx.counts.get(set.i) || 0) > 1).map(set => ({ set, count: ctx.counts.get(set.i) }));
   const broken = items.filter(item => item?.c && conditionGap(item.c, raw, bonuses) > 0).map(item => item.i);
   const missing = Object.entries(intent.targets).map(([key, want]) => ({ key, want, got: Math.floor(targetValue(raw, key, intent.level)) })).filter(row => row.got < row.want);
-  return { items, stats, raw, sets, exos: assignExos(ctx, items), broken, missing, hp: Math.floor(maxHp(raw, intent.level)), ehp: Math.round(effectiveHp(raw, intent.level)), damage: spellDamage(raw, intent), res: averageRes(raw), capped: { ap: Math.min(CAP.ap, stats.ap), mp: Math.min(CAP.mp, stats.mp), range: Math.min(CAP.range, stats.range) } };
+  return { items, stats, raw, sets, exos: assignExos(ctx, items), broken, missing, hp: Math.floor(maxHp(raw, intent.level)), ehp: Math.round(effectiveHp(raw, intent.level)), damage: spellDamage(raw, intent), byElement: Object.fromEntries(Object.keys(ELEMENTS).map(key => [key, spellDamage(raw, { ...intent, elements: [key] })])), res: averageRes(raw), capped: { ap: Math.min(CAP.ap, stats.ap), mp: Math.min(CAP.mp, stats.mp), range: Math.min(CAP.range, stats.range) } };
 }
 
 // Melhores trocas para um espaço, com o efeito no set inteiro.
-export function alternatives(gear, ids, rawIntent, slotIndex, limit = 4) {
+// Com busca, regras de preferência (fabricável, sem Dofus, banidos) não escondem o item pedido.
+export function alternatives(gear, ids, rawIntent, slotIndex, limit = 4, { match = null, stat = '' } = {}) {
   const intent = { ...defaultIntent(), ...rawIntent };
   const ctx = context(gear, intent);
   const byId = new Map(gear.items.map(item => [item.i, item]));
   const items = ids.map(id => byId.get(id) || null);
   const now = describeBuild(gear, ids, intent);
-  return gear.items.filter(item => SLOT_OF_TYPE[item.t] === SLOTS[slotIndex] && allowed(item, intent) && item.i !== ids[slotIndex]).map(item => {
+  const fits = item => (match ? item.l <= intent.level && match(item) : allowed(item, intent)) && (!stat || ctx.vectors.items.get(item.i)[S[stat]] > 0);
+  return gear.items.filter(item => SLOT_OF_TYPE[item.t] === SLOTS[slotIndex] && item.i !== ids[slotIndex] && fits(item)).map(item => {
     const trial = [...items]; trial[slotIndex] = item;
     return isLegal(trial) ? { item, value: score(ctx, trial) } : null;
   }).filter(Boolean).sort((a, b) => b.value - a.value).slice(0, limit).map(({ item }) => {
     const next = [...ids]; next[slotIndex] = item.i;
     const after = describeBuild(gear, next, intent);
-    return { item, damage: (after.damage / now.damage - 1) * 100, hp: after.hp - now.hp, ap: after.capped.ap - now.capped.ap, mp: after.capped.mp - now.capped.mp, broken: after.broken.length };
+    return { item, stat: stat ? ctx.vectors.items.get(item.i)[S[stat]] : 0, damage: (after.damage / now.damage - 1) * 100, hp: after.hp - now.hp, ap: after.capped.ap - now.capped.ap, mp: after.capped.mp - now.capped.mp, broken: after.broken.length };
   });
 }
 

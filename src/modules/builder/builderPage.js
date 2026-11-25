@@ -2,7 +2,7 @@ import { creatureCatalog } from '../../data/creatures.js';
 import { escapeHtml, icon, t } from '../../components/common.js';
 import { renderDisclosure, renderPageHead } from '../../components/pageLayout.js';
 import { formatKamas, formatNumber } from '../../utils/currency.js';
-import { bestTurn, gradeFor, scrollOf, testSpell } from './buildEngine.js';
+import { POINT_STATS, allocatePoints, bestTurn, gradeFor, pointsValue, scrollOf, testSpell } from './buildEngine.js';
 import { buildCost, currentBreed, currentBuild, slotAlternatives } from './builderController.js';
 import { normalizeText } from './chatParser.js';
 import { FORGE_STATS, LANGUAGES, PET_TYPES, SET_BONUS_ID, SLOTS, STAT, UNIQUE_EXOS, breedImage, forgeLimit, isExo, isForgeable, itemImage, itemLines, itemName, spellImage } from './gearSchema.js';
@@ -66,6 +66,12 @@ function chat(state, tr) {
     <form class="chat-form" data-form="builder"><label class="visually-hidden" for="builder-input">${escapeHtml(tr('placeholder'))}</label><input class="input" id="builder-input" data-builder-input maxlength="500" autocomplete="off" placeholder="${escapeHtml(tr('placeholder'))}" value="${escapeHtml(state.builder.input)}"><button class="button primary" type="submit" ${busy || !gear ? 'disabled' : ''}>${escapeHtml(tr('send'))}</button></form></article>`;
 }
 
+function pointsForm(state, tr, off) {
+  const { intent } = state.builder; const spent = allocatePoints(intent);
+  const rows = POINT_STATS.map(key => `<label class="option-line points">${statIcon(key, 18)}<span>${escapeHtml(tr(`stat.${key}`))} <small class="muted">+${pointsValue(key, spent.used[key])}</small></span><input class="input" type="number" min="0" max="${spent.total}" inputmode="numeric" data-builder-option="points-${key}" data-id="points-${key}" value="${intent.points[key] ?? ''}" placeholder="${spent.used[key]}" ${off}></label>`).join('');
+  return `<div>${rows}<p class="muted small">${escapeHtml(tr('pointsHelp', { total: spent.total, left: spent.left }))}</p></div>`;
+}
+
 // Opções do personagem: tudo que o chat entende também pode ser visto e mudado aqui.
 function options(state, tr) {
   const { intent, breeds, pickBreed, ids, busy, gear, dirty } = state.builder;
@@ -78,6 +84,7 @@ function options(state, tr) {
   const body = `<button type="button" class="breed-button" data-action="builder-pick-breed" aria-expanded="${pickBreed}">${breed ? picture(breedImage(breed.i), 40) : icon('user', 26)}<span><small>${escapeHtml(tr('breed'))}</small><strong>${escapeHtml(breed ? itemName(breed, state.language) : tr('chooseBreed'))}</strong></span>${icon('down', 16)}</button>${grid}
     ${group(tr('profile'), `${number('level', tr('levelLabel'), intent.level, 200, icon('user', 18))}${number('scroll', tr('scrollLabel'), scrollOf(intent), 100, statIcon('wisdom', 18))}`)}
     ${group(tr('targetsLabel'), UNIQUE_EXOS.map(key => number(key, tr(`stat.${key}`), intent.targets[key] || '', key === 'ap' ? 12 : 6, statIcon(key, 18), '—')).join(''))}
+    ${renderDisclosure(state, 'builder-points', tr('pointsLabel'), pointsForm(state, tr, off), { open: Object.keys(intent.points).length > 0, className: 'points-box' })}
     ${group(tr('elementsLabel'), `<div class="toggles">${ELEMENT_KEYS.map(key => toggle('element', tr(`stat.${key}`), intent.elements.includes(key), key, key)).join('')}</div>`)}
     ${group(tr('exoLabel'), `<div class="toggles three">${UNIQUE_EXOS.map(key => toggle(`exo-${key}`, tr(`stat.${key}`), intent.exo[key], '', key)).join('')}</div>`)}
     ${group(tr('rulesLabel'), `<div class="toggles">${toggle('roll', tr('maxRoll'), intent.roll === 'max')}${toggle('noCrit', tr('noCrit'), intent.noCrit)}${toggle('noDofus', tr('noDofus'), intent.noDofus)}${toggle('craftable', tr('craftable'), intent.craftable)}</div>`)}
@@ -107,7 +114,7 @@ function doll(state, tr, build) {
     ${column(RIGHT)}</div>
     <div class="doll-bottom">${BOTTOM.map(index => slotButton(state, tr, build, index)).join('')}</div>
     <ul class="doll-points">${big('ap', build.capped.ap, tr('stat.ap'))}${big('mp', build.capped.mp, tr('stat.mp'))}${big('range', build.capped.range, tr('stat.range'))}</ul>
-    <ul class="stat-list plain">${statRow(state, tr, 'hp', build.hp)}${statRow(state, tr, 'damageAll', formatNumber(Math.round(build.damage), state.language))}${statRow(state, tr, 'res', `${formatNumber(Math.round(build.res), state.language)}%`)}</ul></div>`;
+    <ul class="stat-list plain">${statRow(state, tr, 'hp', build.hp)}${[...ELEMENT_KEYS].sort((a, b) => state.builder.intent.elements.includes(b) - state.builder.intent.elements.includes(a)).map(key => statRow(state, tr, `${key}Hit`, formatNumber(Math.round(build.byElement[key]), state.language), '', state.builder.intent.elements.includes(key) ? 'main-element' : 'other-element')).join('')}${statRow(state, tr, 'res', `${formatNumber(Math.round(build.res), state.language)}%`)}</ul></div>`;
 }
 
 function conditionText(tr, node) {
@@ -125,8 +132,10 @@ function setBlock(state, tr, set, count) {
 }
 
 function swaps(state, tr, index) {
-  const rows = slotAlternatives(state, index).map(row => `<li>${picture(itemImage(row.item), 42)}<div><strong>${escapeHtml(itemName(row.item, state.language))}</strong><ul class="swap-effects"><li class="${tone(row.damage)}">${statIcon('damageAll', 15)}${signed(state, row.damage, '%', 1)}</li><li class="${tone(row.hp)}">${statIcon('hp', 15)}${signed(state, row.hp)}</li>${row.ap ? `<li class="${tone(row.ap)}">${statIcon('ap', 15)}${signed(state, row.ap)}</li>` : ''}${row.mp ? `<li class="${tone(row.mp)}">${statIcon('mp', 15)}${signed(state, row.mp)}</li>` : ''}</ul>${row.broken ? `<small class="negative">${escapeHtml(tr('conditionBroken'))}</small>` : ''}</div><button type="button" class="button secondary compact" data-action="builder-use" data-index="${index}" data-id="${row.item.i}">${escapeHtml(tr('use'))}</button></li>`).join('');
-  return `<section class="panel-section"><h4>${escapeHtml(tr('alternatives', { name: tr(`slot.${SLOTS[index]}`) }))}</h4>${rows ? `<ul class="swap-list">${rows}</ul>` : `<p class="muted small">${escapeHtml(t(state, 'common.noResults'))}</p>`}</section>`;
+  const rows = slotAlternatives(state, index).map(row => `<li>${picture(itemImage(row.item), 42)}<div><strong>${escapeHtml(itemName(row.item, state.language))}</strong> <small class="muted">${escapeHtml(t(state, 'simulation.levelShort'))} ${row.item.l}</small><ul class="swap-effects">${state.builder.swapStat ? `<li>${statIcon(state.builder.swapStat, 15)}<b>${formatNumber(Math.floor(row.stat), state.language)}</b></li>` : ''}<li class="${tone(row.damage)}">${statIcon('damageAll', 15)}${signed(state, row.damage, '%', 1)}</li><li class="${tone(row.hp)}">${statIcon('hp', 15)}${signed(state, row.hp)}</li>${row.ap ? `<li class="${tone(row.ap)}">${statIcon('ap', 15)}${signed(state, row.ap)}</li>` : ''}${row.mp ? `<li class="${tone(row.mp)}">${statIcon('mp', 15)}${signed(state, row.mp)}</li>` : ''}</ul>${row.broken ? `<small class="negative">${escapeHtml(tr('conditionBroken'))}</small>` : ''}</div><button type="button" class="button secondary compact" data-action="builder-use" data-index="${index}" data-id="${row.item.i}">${escapeHtml(tr('use'))}</button></li>`).join('');
+  const { swapQuery, swapStat } = state.builder;
+  const filters = `<div class="swap-filters"><label class="visually-hidden" for="builder-swap-query">${escapeHtml(tr('swapSearch'))}</label><input class="input" id="builder-swap-query" data-builder-swap-query autocomplete="off" placeholder="${escapeHtml(tr('swapSearch'))}" value="${escapeHtml(swapQuery)}"><select class="select" data-builder-swap-stat aria-label="${escapeHtml(tr('swapStat'))}"><option value="">${escapeHtml(tr('swapStat'))}</option>${FORGE_STATS.map(key => `<option value="${key}" ${swapStat === key ? 'selected' : ''}>${escapeHtml(tr(`stat.${key}`))}</option>`).join('')}</select></div>`;
+  return `<section class="panel-section"><h4>${escapeHtml(tr('alternatives', { name: tr(`slot.${SLOTS[index]}`) }))}</h4>${filters}${rows ? `<ul class="swap-list">${rows}</ul>` : `<p class="muted small">${escapeHtml(t(state, 'common.noResults'))}</p>`}</section>`;
 }
 
 // Linhas do item. Fora do modo de forja, só leitura; nele, cada valor pode ser mudado.
@@ -214,14 +223,15 @@ function panel(state, tr, build) {
 function result(state, tr) {
   const build = currentBuild(state);
   if (!build) return '';
-  const { busy, saveName } = state.builder;
-  return `<article class="card builder-result"><div class="save-bar"><label class="visually-hidden" for="builder-save-name">${escapeHtml(tr('saveName'))}</label><input class="input" id="builder-save-name" data-builder-save-name maxlength="80" placeholder="${escapeHtml(tr('saveName'))}" value="${escapeHtml(saveName)}"><button type="button" class="button primary" data-action="builder-save">${icon('check', 16)} ${escapeHtml(tr('save'))}</button><button type="button" class="button secondary" data-action="builder-new" ${busy ? 'disabled' : ''}>${icon('plus', 16)} ${escapeHtml(tr('newSet'))}</button></div>
+  const { busy, saveName, savedId, saved } = state.builder;
+  const open = saved.some(row => row.id === savedId);
+  return `<article class="card builder-result"><div class="save-bar ${open ? 'open' : ''}"><label class="visually-hidden" for="builder-save-name">${escapeHtml(tr('saveName'))}</label><input class="input" id="builder-save-name" data-builder-save-name maxlength="80" placeholder="${escapeHtml(tr('saveName'))}" value="${escapeHtml(saveName)}">${open ? `<button type="button" class="button primary" data-action="builder-update">${icon('check', 16)} ${escapeHtml(tr('saveChanges'))}</button><button type="button" class="button secondary" data-action="builder-save">${icon('copy', 16)} ${escapeHtml(tr('saveAs'))}</button>` : `<button type="button" class="button primary" data-action="builder-save">${icon('check', 16)} ${escapeHtml(tr('save'))}</button>`}<button type="button" class="button secondary" data-action="builder-new" ${busy ? 'disabled' : ''}>${icon('plus', 16)} ${escapeHtml(tr('newSet'))}</button></div>
     <div class="sheet">${doll(state, tr, build)}${panel(state, tr, build)}</div></article>`;
 }
 
 export function renderBuilderPage(state) {
   const tr = (key, vars) => t(state, `builder.${key}`, vars);
   const { saved } = state.builder;
-  const mine = saved.length ? `<article class="card section builder-mine">${renderDisclosure(state, 'builder-saved', `${tr('mySets')} (${saved.length})`, `<ul class="builder-saved">${saved.map(row => `<li>${row.intent.breed ? picture(breedImage(row.intent.breed), 30) : icon('shield', 24)}<strong>${escapeHtml(row.name)}</strong><button type="button" class="button ghost compact" data-action="builder-open" data-id="${escapeHtml(row.id)}">${escapeHtml(tr('open'))}</button><button type="button" class="icon-button danger" data-action="builder-delete" data-id="${escapeHtml(row.id)}" aria-label="${escapeHtml(`${t(state, 'common.delete')}: ${row.name}`)}">${icon('trash', 15)}</button></li>`).join('')}</ul>`, { open: true })}</article>` : '';
+  const mine = saved.length ? `<article class="card section builder-mine">${renderDisclosure(state, 'builder-saved', `${tr('mySets')} (${saved.length})`, `<ul class="builder-saved">${saved.map(row => `<li class="${row.id === state.builder.savedId ? 'current' : ''}">${row.intent.breed ? picture(breedImage(row.intent.breed), 30) : icon('shield', 24)}<strong>${escapeHtml(row.name)}</strong><button type="button" class="button ghost compact" data-action="builder-open" data-id="${escapeHtml(row.id)}">${escapeHtml(tr('open'))}</button><button type="button" class="icon-button danger" data-action="builder-delete" data-id="${escapeHtml(row.id)}" aria-label="${escapeHtml(`${t(state, 'common.delete')}: ${row.name}`)}">${icon('trash', 15)}</button></li>`).join('')}</ul>`, { open: true })}</article>` : '';
   return `<section class="stack builder-page">${renderPageHead(state, { title: tr('title'), description: tr('intro') })}<div class="builder-layout"><div class="stack builder-side">${chat(state, tr)}${options(state, tr)}${mine}</div><div class="stack builder-content">${result(state, tr) || `<article class="card builder-empty">${icon('shield', 60)}<p>${escapeHtml(tr('emptyResult'))}</p></article>`}</div></div></section>`;
 }

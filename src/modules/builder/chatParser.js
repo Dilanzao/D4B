@@ -107,6 +107,12 @@ export function parseMessage(message, gear, langIndex = 0, current = null) {
     if (kind === 'exo' && !slot) { out.patch.exo = Object.fromEntries((keys.length ? keys : ['ap', 'mp', 'range']).map(key => [key, !noExo])); cue(); text = text.replace(/\b(?:nao |sem |pode |posso |considera\w* |usa\w* |com |no |without |with |sans |avec |sin |con )*exo\w*\b(?:\s*(?:de |e |and |et |y |,)?\s*(?:pa|pm|al|ap|mp|alcance|range|po)\b)*/, ' '); }
     else if (kind === 'over') return { ...out, action: 'forgeHelp', cues: 1 };
   }
+  // Pontos de característica: "300 pontos em vitalidade", "pontos automáticos".
+  if (/\b(pontos|points|puntos)\b.{0,12}\b(auto\w*)\b/.test(text)) { out.patch.points = null; cue(); text = text.replace(/\b(pontos|points|puntos)\b.{0,12}\bauto\w*/, ' '); }
+  for (const match of text.matchAll(/(\d{1,3}) (?:pontos?|points?|puntos?)(?: de caracteristica)? (?:em|de|na|no|in|en|dans) (\w+)/g)) {
+    const key = [['vitality', 'vida|vit|vitalidade|vitality|vitalite|vitalidad'], ['wisdom', 'sab|sabedoria|wisdom|sagesse|sabiduria'], ...Object.entries(ELEMENT_WORDS)].find(([, words]) => word(words).test(match[2]))?.[0];
+    if (key) { out.patch.points = { ...(out.patch.points || {}), [key]: Number(match[1]) }; cue(); text = text.replace(match[0], ' '); }
+  }
   // Pergaminhos.
   const scroll = text.match(/\b(?:(sem|nao (?:to |tou |estou |sou |esta |ta )?(?:com )?|not |no |un|sans |sin |non )\s*)?(?:full )?(?:pergaminh\w*|scroll\w*|parchemin\w*|pergamin\w*)(?:\s*(?:em |de |a )?(\d{1,3}))?/);
   if (scroll) { out.patch.scroll = scroll[1] ? 0 : scroll[2] ? Math.min(100, +scroll[2]) : 100; cue(); text = text.replace(scroll[0], ' '); }
@@ -218,8 +224,10 @@ export function defaultTargets(level) {
 export function applyParsed(base, parsed, { gear, ids = null, defaults }) {
   const fresh = parsed.action === 'reset';
   const intent = structuredClone(fresh ? defaults : base);
-  const { targets, exo, ...patch } = parsed.patch;
+  const { targets, exo, points, ...patch } = parsed.patch;
   Object.assign(intent, patch);
+  if (points === null) intent.points = {};
+  else if (points) intent.points = { ...intent.points, ...points };
   if (exo) intent.exo = { ...intent.exo, ...exo };
   if (parsed.styles) {
     const start = { damage: 1, survival: 0.55, extras: {} };

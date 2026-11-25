@@ -19,6 +19,7 @@ const MAP = {
   power: ['bolt', 'power'], damage: ['sword', 'power'], damageAll: ['sword', 'power'], neutralDamage: ['neutral', 'neutral'], earthDamage: ['earth', 'earth'], fireDamage: ['fire', 'fire'], waterDamage: ['water', 'water'], airDamage: ['air', 'air'], critical: ['burst', 'crit'], criticalDamage: ['burst', 'fire'],
   spellDamage: ['star', 'mind'], meleeDamage: ['sword', 'steel'], rangedDamage: ['bow', 'range'], weaponDamage: ['sword', 'earth'], initiative: ['clock', 'range'], prospecting: ['coin', 'gold'], lock: ['link', 'steel'], dodge: ['wing', 'air'], heals: ['plus', 'heal'], summons: ['paw', 'earth'],
   apParry: ['star', 'ap', 1], mpParry: ['boot', 'mp', 1], apReduction: ['minus', 'ap'], mpReduction: ['minus', 'mp'], pushDamage: ['push', 'power'], trapDamage: ['trap', 'steel'], trapPower: ['trap', 'power'], pods: ['bag', 'earth'], reflect: ['mirror', 'steel'],
+  strengthHit: ['earth', 'earth'], intelligenceHit: ['fire', 'fire'], chanceHit: ['water', 'water'], agilityHit: ['air', 'air'],
   neutralRes: ['neutral', 'neutral', 1], earthRes: ['earth', 'earth', 1], fireRes: ['fire', 'fire', 1], waterRes: ['water', 'water', 1], airRes: ['air', 'air', 1], neutralFlat: ['neutral', 'neutral', 1], earthFlat: ['earth', 'earth', 1], fireFlat: ['fire', 'fire', 1], waterFlat: ['water', 'water', 1], airFlat: ['air', 'air', 1],
   criticalRes: ['burst', 'crit', 1], pushRes: ['push', 'power', 1], meleeRes: ['sword', 'steel', 1], rangedRes: ['bow', 'range', 1], res: ['plus', 'steel', 1], neutral: ['neutral', 'neutral'], best: ['star', 'mind']
 };

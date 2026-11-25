@@ -275,3 +275,9 @@
 @media(prefers-reduced-motion:reduce){.doll-slot{transition:none}}
 .panel>.tabs{display:grid;grid-template-columns:repeat(4,auto);overflow:visible;gap:0}.panel>.tabs button{padding:10px 6px;font-size:.84rem;white-space:normal;line-height:1.2}
 @media(max-width:620px){.chat-chips{flex-wrap:nowrap;overflow-x:auto;gap:18px}.chip{white-space:nowrap}}
+.stat-row.other-element{color:var(--muted)}.stat-row.main-element{font-weight:700}
+.points-box{border-top:1px solid var(--border-soft);padding:6px 0}.points-box .disclosure-body{padding-top:2px}
+.swap-filters{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:8px;margin:8px 0}.swap-list{max-height:440px;overflow-y:auto}
+.save-bar.open{grid-template-columns:minmax(0,1fr) auto auto auto}.builder-saved li.current strong{color:var(--gold-dark)}
+@media(max-width:1400px){.save-bar.open{grid-template-columns:repeat(3,auto)}.save-bar.open .input{grid-column:1/-1}}
+@media(max-width:620px){.swap-filters,.save-bar.open{grid-template-columns:minmax(0,1fr)}}

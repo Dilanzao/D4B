@@ -160,4 +160,21 @@ for (const key of Object.keys(STAT)) assert.ok(STAT_ICON_KEYS.includes(key), 'se
 for (const language of languages) for (const key of Object.keys(STAT)) assert.ok(builderTranslations[language].builder.stat[key], language + ' ' + key);
 for (const tab of ['stats', 'sets', 'passives', 'spells']) for (const language of languages) { const html = renderBuilderPage({ ...st, language, disclosures: {}, builder: { ...st.builder, selected: null, tab, intent: { ...st.builder.intent, breed: 8 } } }); assert.doesNotMatch(html, /undefined|NaN|\bbuilder\.[a-z]/i, tab); }
 assert.match(renderBuilderPage({ ...st, disclosures: {}, builder: { ...st.builder, selected: 0, forging: true } }), /data-builder-forge/);
+// Pontos, dano por elemento, busca de trocas e edição de salvos.
+const { allocatePoints } = await import('../src/modules/builder/buildEngine.js'); const { updateSaved, saveCurrent, openSaved, deleteSaved, slotAlternatives } = await import('../src/modules/builder/builderController.js');
+assert.deepEqual(allocatePoints({ ...defaultIntent(), level: 200 }).used.strength, 995);
+let pts = allocatePoints({ ...defaultIntent(), level: 200, points: { vitality: 295 } }); assert.equal(pts.used.vitality, 295); assert.equal(pts.used.strength, 700); assert.equal(pts.left, 0);
+pts = allocatePoints({ ...defaultIntent(), level: 50, points: { vitality: 900, wisdom: 50 } }); assert.equal(pts.used.vitality, 245); assert.equal(pts.used.wisdom, 0);
+assert.equal(allocatePoints({ ...defaultIntent(), level: 200, points: { strength: 100 } }).left, 895);
+assert.equal(describeBuild(gear, SLOTS.map(() => null), { ...defaultIntent(), level: 200, points: { vitality: 300 } }).hp, naked.hp + 300);
+assert.deepEqual(say('300 pontos em vitalidade').intent.points, { vitality: 300 }); assert.equal(say('300 pontos em vitalidade').intent.level, 200);
+assert.deepEqual(say('pontos automaticos', { ...defaultIntent(), points: { vitality: 3 } }).intent.points, {});
+const fireBuild = describeBuild(gear, ids, { ...defaultIntent() }); assert.ok(fireBuild.byElement.strength > fireBuild.byElement.chance); assert.ok(Math.abs(fireBuild.byElement.strength - fireBuild.damage) < 1e-9);
+const sv = { language: 'pt-BR', builder: { ...createBuilderState(), gear, breeds, ids: [...ids], saveName: 'A' }, account: {}, craftInventory: [] };
+saveCurrent(sv); assert.equal(sv.builder.saved.length, 1); sv.builder.saveName = 'B'; sv.builder.intent.level = 199; assert.equal(updateSaved(sv), true); assert.equal(sv.builder.saved.length, 1); assert.equal(sv.builder.saved[0].name, 'B'); assert.equal(sv.builder.saved[0].intent.level, 199);
+sv.builder.saveName = 'C'; saveCurrent(sv); assert.equal(sv.builder.saved.length, 2); assert.notEqual(sv.builder.saved[0].id, sv.builder.saved[1].id);
+openSaved(sv, sv.builder.saved[1].id); assert.equal(sv.builder.saveName, 'B'); deleteSaved(sv, sv.builder.savedId); assert.equal(updateSaved(sv), false);
+sv.builder.intent.level = 200; sv.builder.swapQuery = 'ganimede'; assert.ok(slotAlternatives(sv, 0).every(row => row.item.n.some(name => /ganimede|ganymede/i.test(name))));
+sv.builder.swapQuery = ''; sv.builder.swapStat = 'heals'; const healers = slotAlternatives(sv, 0); assert.ok(healers.length > 4 && healers.every(row => row.stat > 0));
+assert.doesNotMatch(renderBuilderPage({ ...sv, disclosures: {}, builder: { ...sv.builder, selected: 0, showSwaps: true } }), /undefined|\bNaN\b|\bbuilder\.[a-z]/);
 console.log('Builder tests passed.');

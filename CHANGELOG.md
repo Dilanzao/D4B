@@ -2,6 +2,8 @@
 
 ## Não lançado
 
+- Montador de sets: dano por elemento, pontos de característica, busca nas trocas e edição de sets salvos.
+
 - Montador de sets: personagem com espaços no corpo, raças e teste de feitiços, detalhes e forjamagia (exo e over) por item, bônus de conjunto e efeitos passivos, pergaminhos, nova conversa e nome ao salvar.
 
 - Novo montador de sets por conversa, com dados do DofusDude, ligado ao estoque, aos crafts e aos pets.

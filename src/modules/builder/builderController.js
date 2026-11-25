@@ -1,5 +1,5 @@
-import { alternatives, defaultIntent, describeBuild, optimize, scrollOf, spellProfile } from './buildEngine.js';
-import { applyParsed, defaultTargets, parseMessage } from './chatParser.js';
+import { POINT_STATS, alternatives, defaultIntent, describeBuild, optimize, scrollOf, spellProfile } from './buildEngine.js';
+import { applyParsed, defaultTargets, normalizeText, parseMessage } from './chatParser.js';
 import { FORGE_STATS, LANGUAGES, SLOTS, SLOT_OF_TYPE, UNIQUE_EXOS, forgeLimit, isExo, isForgeable, itemName, naturalMax } from './gearSchema.js';
 import { t } from '../../components/common.js';
 import { formatKamas, formatNumber } from '../../utils/currency.js';
@@ -18,6 +18,10 @@ function cleanStats(raw) {
   return Object.fromEntries(['ap', 'mp', 'range', 'hp', 'damage', 'res'].map(key => [key, Math.round(Number(raw[key])) || 0]));
 }
 
+function cleanPoints(raw) {
+  return Object.fromEntries(POINT_STATS.filter(key => Number.isFinite(raw?.[key])).map(key => [key, Math.min(995, Math.max(0, Math.trunc(raw[key])))]));
+}
+
 function cleanForge(raw) {
   const out = {};
   for (const [id, values] of Object.entries(raw && typeof raw === 'object' ? raw : {}).slice(0, 60)) {
@@ -33,19 +37,19 @@ function cleanIntent(raw) {
   const numbers = value => Object.fromEntries(Object.entries(value && typeof value === 'object' ? value : {}).filter(([key, item]) => /^[a-zA-Z]+$/.test(key) && Number.isFinite(item)));
   return { ...base, level: Math.min(200, Math.max(1, Math.trunc(Number(raw.level) || 200))), elements: (Array.isArray(raw.elements) ? raw.elements : base.elements).filter(item => ['strength', 'intelligence', 'chance', 'agility'].includes(item)),
     damage: Number(raw.damage) || base.damage, survival: Number(raw.survival) || base.survival, extras: numbers(raw.extras), targets: numbers(raw.targets), customTargets: Boolean(raw.customTargets), noCrit: Boolean(raw.noCrit), craftable: Boolean(raw.craftable), noDofus: Boolean(raw.noDofus), preferOwned: Boolean(raw.preferOwned),
-    roll: raw.roll === 'max' ? 'max' : 'average', distance: ['melee', 'ranged'].includes(raw.distance) ? raw.distance : 'any', breed: Math.trunc(Number(raw.breed)) || 0, scroll: Number.isFinite(raw.scroll) ? Math.min(100, Math.max(0, Math.trunc(raw.scroll))) : null, exo: Object.fromEntries(UNIQUE_EXOS.map(key => [key, Boolean(raw.exo?.[key])])), forge: cleanForge(raw.forge), locked: list(raw.locked), banned: list(raw.banned) };
+    roll: raw.roll === 'max' ? 'max' : 'average', distance: ['melee', 'ranged'].includes(raw.distance) ? raw.distance : 'any', breed: Math.trunc(Number(raw.breed)) || 0, scroll: Number.isFinite(raw.scroll) ? Math.min(100, Math.max(0, Math.trunc(raw.scroll))) : null, exo: Object.fromEntries(UNIQUE_EXOS.map(key => [key, Boolean(raw.exo?.[key])])), forge: cleanForge(raw.forge), points: cleanPoints(raw.points), locked: list(raw.locked), banned: list(raw.banned) };
 }
 
 export function createBuilderState() {
   const saved = read(BUILDER_KEY, {});
   const builds = read(BUILDS_KEY, []);
-  return { status: 'idle', gear: null, breeds: null, selected: null, tab: 'stats', forging: false, showSwaps: false, pickBreed: false, targetRes: 0, dirty: false, saveName: '', busy: false, input: '', swapIndex: null, history: [], seed: 7, ids: Array.isArray(saved?.ids) ? cleanIds(saved.ids) : null, intent: cleanIntent(saved?.intent),
+  return { status: 'idle', gear: null, breeds: null, selected: null, tab: 'stats', forging: false, showSwaps: false, pickBreed: false, targetRes: 0, dirty: false, saveName: '', savedId: String(saved?.savedId || '').replace(/[^\w-]/g, ''), swapQuery: '', swapStat: '', busy: false, input: '', swapIndex: null, history: [], seed: 7, ids: Array.isArray(saved?.ids) ? cleanIds(saved.ids) : null, intent: cleanIntent(saved?.intent),
     messages: (Array.isArray(saved?.messages) ? saved.messages : []).slice(-30).map(item => ({ role: item?.role === 'user' ? 'user' : 'bot', text: String(item?.text || '').slice(0, 4000), tags: Array.isArray(item?.tags) ? item.tags.slice(0, 20).map(tag => String(tag).slice(0, 120)) : [], stats: cleanStats(item?.stats) })),
     saved: (Array.isArray(builds) ? builds : []).map(item => ({ id: String(item?.id || '').replace(/[^\w-]/g, ''), name: String(item?.name || '').slice(0, 120), ids: cleanIds(item?.ids), intent: cleanIntent(item?.intent) })) };
 }
 
 export function persistBuilder(builder) {
-  write(BUILDER_KEY, { ids: builder.ids, intent: builder.intent, messages: builder.messages.slice(-30) });
+  write(BUILDER_KEY, { savedId: builder.savedId, ids: builder.ids, intent: builder.intent, messages: builder.messages.slice(-30) });
   write(BUILDS_KEY, builder.saved);
 }
 
@@ -107,6 +111,8 @@ function describeIntent(state, intent) {
   const breed = (state.builder.breeds || []).find(row => row.i === intent.breed);
   if (breed) parts.unshift(itemName(breed, state.language));
   if (intent.scroll !== null) parts.push(scrollOf(intent) ? tr('scrolled', { value: scrollOf(intent) }) : tr('unscrolled'));
+  const fixedPoints = Object.entries(intent.points).map(([key, value]) => `${value} ${tr(`stat.${key}`)}`);
+  if (fixedPoints.length) parts.push(tr('pointsFixed', { list: fixedPoints.join(', ') }));
   const exos = UNIQUE_EXOS.filter(key => intent.exo[key]);
   if (exos.length) parts.push(tr('exoAllowed', { list: exos.map(key => tr(`stat.${key}`)).join(', ') }));
   return parts.map(part => part.charAt(0).toUpperCase() + part.slice(1));
@@ -150,14 +156,25 @@ export function costReply(state) {
   return cost.known ? t(state, 'builder.cost', { value: formatKamas(cost.cost, state.language), known: cost.known, total: cost.total, items: cost.items }) : t(state, 'builder.costNone');
 }
 
+// Grava por cima do set salvo que está aberto.
+export function updateSaved(state) {
+  const builder = state.builder; const row = builder.saved.find(item => item.id === builder.savedId);
+  if (!row || !builder.ids) return false;
+  Object.assign(row, { name: builder.saveName.trim().slice(0, 80) || row.name, ids: [...builder.ids], intent: structuredClone(builder.intent) });
+  builder.saveName = row.name;
+  persistBuilder(builder);
+  return true;
+}
+
 function saveBuild(state) {
   const builder = state.builder;
   const intent = builder.intent;
   const breed = currentBreed(builder);
   const auto = `${breed ? `${itemName(breed, state.language)} · ` : ''}${t(state, 'builder.level', { value: intent.level })} · ${intent.elements.map(key => t(state, `builder.stat.${key}`)).join(' + ') || t(state, 'builder.hp')}`;
   const name = builder.saveName.trim().slice(0, 80) || auto.charAt(0).toUpperCase() + auto.slice(1);
-  builder.saveName = '';
-  builder.saved = [{ id: `build-${Date.now().toString(36)}`, name, ids: [...builder.ids], intent: structuredClone(intent) }, ...builder.saved].slice(0, 40);
+  const id = `build-${Date.now().toString(36)}-${builder.saved.length}`;
+  builder.savedId = id; builder.saveName = name;
+  builder.saved = [{ id, name, ids: [...builder.ids], intent: structuredClone(intent) }, ...builder.saved].slice(0, 40);
 }
 
 const remember = builder => { if (builder.ids) builder.history = [...builder.history, { ids: [...builder.ids], intent: structuredClone(builder.intent) }].slice(-20); };
@@ -183,7 +200,7 @@ function statReply(state, key) {
 async function rebuild(state, intent, parsed, emit) {
   const builder = state.builder;
   const { gear } = builder;
-  const previous = builder.ids && parsed.action !== 'reset' && intent.level === builder.intent.level ? describe(state, builder.ids, intent) : null;
+  const previous = builder.ids && parsed.action !== 'reset' && intent.level === builder.intent.level && intent.breed === builder.intent.breed && intent.elements.join() === builder.intent.elements.join() ? describe(state, builder.ids, intent) : null;
   const oldIds = builder.ids;
   remember(builder);
   // As travas de "troca o anel" valem só para esta montagem.
@@ -270,14 +287,19 @@ export function swapItem(state, index, id) {
   persistBuilder(builder);
 }
 
-export const slotAlternatives = (state, index) => alternatives(state.builder.gear, state.builder.ids, withOwned(state, state.builder.intent), index);
-export function openSaved(state, id) { const builder = state.builder; const row = builder.saved.find(item => item.id === id); if (!row) return; remember(builder); builder.ids = [...row.ids]; builder.intent = structuredClone(row.intent); builder.selected = null; builder.dirty = false; persistBuilder(builder); }
-export function deleteSaved(state, id) { state.builder.saved = state.builder.saved.filter(item => item.id !== id); persistBuilder(state.builder); }
+export function slotAlternatives(state, index) {
+  const { gear, ids, intent, swapQuery, swapStat } = state.builder;
+  const query = normalizeText(swapQuery);
+  const match = query ? item => item.n.some(name => normalizeText(name).includes(query)) : null;
+  return alternatives(gear, ids, withOwned(state, intent), index, query || swapStat ? 20 : 8, { match, stat: swapStat });
+}
+export function openSaved(state, id) { const builder = state.builder; const row = builder.saved.find(item => item.id === id); if (!row) return; remember(builder); builder.ids = [...row.ids]; builder.intent = structuredClone(row.intent); builder.selected = null; builder.dirty = false; builder.savedId = row.id; builder.saveName = row.name; persistBuilder(builder); }
+export function deleteSaved(state, id) { if (state.builder.savedId === id) state.builder.savedId = ''; state.builder.saved = state.builder.saved.filter(item => item.id !== id); persistBuilder(state.builder); }
 // Limpa conversa e set, mantendo os salvos. "Desfazer" ainda traz o set de volta.
 export function startOver(state) {
   const builder = state.builder;
   remember(builder);
-  Object.assign(builder, { ids: null, intent: startIntent(), messages: [], asking: null, known: null, selected: null, showSwaps: false, dirty: false, input: '', saveName: '', seed: 7 });
+  Object.assign(builder, { ids: null, intent: startIntent(), messages: [], asking: null, known: null, selected: null, showSwaps: false, dirty: false, input: '', saveName: '', savedId: '', swapQuery: '', swapStat: '', seed: 7 });
   persistBuilder(builder);
 }
 
@@ -329,6 +351,7 @@ export function setBuilderOption(state, field, value) {
   const builder = state.builder; const intent = builder.intent;
   if (field === 'breed') intent.breed = Number(value) || 0;
   else if (field === 'level') { const level = Math.min(200, Math.max(1, Math.trunc(Number(value)) || 1)); if (level !== intent.level) { intent.level = level; if (!intent.customTargets) intent.targets = defaultTargets(level); } }
+  else if (field.startsWith('points-')) { const key = field.slice(7); if (!POINT_STATS.includes(key)) return; const points = { ...intent.points }; if (String(value).trim() === '') delete points[key]; else points[key] = Math.max(0, Math.min((intent.level - 1) * 5, Math.trunc(Number(value)) || 0)); intent.points = points; }
   else if (field === 'scroll') intent.scroll = String(value).trim() === '' ? null : Math.min(100, Math.max(0, Math.trunc(Number(value)) || 0));
   else if (field.startsWith('exo-')) { const key = field.slice(4); if (UNIQUE_EXOS.includes(key)) intent.exo = { ...intent.exo, [key]: !intent.exo[key] }; }
   else if (field === 'element') { const has = intent.elements.includes(value); intent.elements = has ? intent.elements.filter(item => item !== value) : [...intent.elements, value]; if (!intent.elements.length) intent.elements = [value]; }

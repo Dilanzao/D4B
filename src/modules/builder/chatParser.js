@@ -20,7 +20,16 @@ const STAT_WORDS = {
   apReduction: 'retirada de pa|retirada pa|ret pa|ap reduction|retrait pa', mpReduction: 'retirada de pm|retirada pm|ret pm|mp reduction|retrait pm', pushDamage: 'empurrao|dano de empurrao|pushback|poussee|empuje',
   power: 'potencia|power|puissance', pods: 'pods', trapDamage: 'armadilha|armadilhas|trap|pieges?', res: 'res|resis|resistencias?|resistances?', damageAll: 'danos?|damage|degats|dano'
 };
-const CLASSES = ['iop', 'cra', 'eniripsa', 'sacrier', 'sacrieur', 'feca', 'osamodas', 'enutrof', 'sram', 'xelor', 'ecaflip', 'sadida', 'pandawa', 'rogue', 'roublard', 'ladino', 'masqueraider', 'zobal', 'foggernaut', 'steamer', 'eliotrope', 'huppermage', 'ouginak', 'forgelance', 'pelutrof', 'cramunho', 'hipermago', 'uginak', 'forjalanca'];
+const BREEDS = { feca: 1, osamodas: 2, osa: 2, enutrof: 3, enu: 3, pelutrof: 3, sram: 4, xelor: 5, ecaflip: 6, eca: 6, eniripsa: 7, eni: 7, iop: 8, cra: 9, sadida: 10, sadi: 10, sacrier: 11, sacrieur: 11, sacri: 11, sacrogrito: 11, pandawa: 12, panda: 12, ladino: 13, rogue: 13, roublard: 13, tymador: 13, zobal: 14, masqueraider: 14, steamer: 15, foggernaut: 15, eliotrope: 16, elio: 16, huppermago: 17, huppermage: 17, hipermago: 17, kilorf: 18, ouginak: 18, uginak: 18, forjalanca: 20, forgelance: 20 };
+const CLASSES = Object.keys(BREEDS);
+// Características que a forjamagia aceita pelo chat, da expressão mais específica à mais geral.
+const FORGE_WORDS = [
+  ['earthRes', 'res\\w* (?:de |a |ao )?(?:terra|earth|terre|tierra)'], ['fireRes', 'res\\w* (?:de |a |ao )?(?:fogo|fire|feu|fuego)'], ['waterRes', 'res\\w* (?:de |a )?(?:agua|water|eau)'], ['airRes', 'res\\w* (?:de |a |ao )?(?:ar|air|aire)'], ['neutralRes', 'res\\w* (?:de |a )?neutr\\w+'], ['criticalRes', 'res\\w* (?:de |a )?critic\\w+'],
+  ['earthDamage', 'danos? (?:de )?terra'], ['fireDamage', 'danos? (?:de )?fogo'], ['waterDamage', 'danos? (?:de )?agua'], ['airDamage', 'danos? (?:de )?ar'], ['neutralDamage', 'danos? neutros?'], ['criticalDamage', 'danos? criticos?|crit damage|dommages? critiques?'], ['pushDamage', 'empurrao|pushback|poussee|empuje'],
+  ['apParry', 'esquiva (?:de )?pa'], ['mpParry', 'esquiva (?:de )?pm'], ['apReduction', 'ret\\w* (?:de )?pa'], ['mpReduction', 'ret\\w* (?:de )?pm'],
+  ['ap', 'pa|ap'], ['mp', 'pm|mp'], ['range', 'al|alcance|po|range|portee'], ['vitality', 'vida|vit|vita|vitalidade|vitality|vitalite|vitalidad|pv|hp'], ['wisdom', 'sab|sabedoria|wisdom|sagesse|sabiduria'], ['strength', 'forca|str|strength|force|fuerza|terra'], ['intelligence', 'int|inteligencia|intelligence|fogo'], ['chance', 'sorte|cha|chance|suerte|agua'], ['agility', 'agi|agilidade|agility|agilite|agilidad|ar'],
+  ['power', 'pot|potencia|power|puissance'], ['critical', 'crit|critico|critical|critique'], ['prospecting', 'pp|prosp|prospeccao|prospecting'], ['initiative', 'ini|iniciativa|initiative'], ['lock', 'bloqueio|lock|tacle|placaje'], ['dodge', 'fuga|dodge|fuite|huida'], ['heals', 'curas?|heals?|soins?'], ['summons', 'invoc\\w*|summons?'], ['damage', 'danos?|damage|dommages?'], ['pods', 'pods']
+];
 const word = list => new RegExp(`(?<![\\w])(?:${list})(?![\\w])`);
 const USE = /\b(usar|use|usa|com o|com a|coloca\w*|bota o|bota a|trava\w*|fixa\w*|quero o|quero a|mant\w+|lock|keep|avec|garde\w*|utilis\w+|pon|usar el|fija\w*|equipa\w*)\b/;
 const BAN = /\b(sem o|sem a|sem|tira\w*|remov\w+|retir\w+|nao quero|nao usa\w*|without|remove|no quiero|sin|sans|enleve\w*|quita\w*|bani\w*|ban)\b/;
@@ -80,7 +89,27 @@ export function parseMessage(message, gear, langIndex = 0, current = null) {
   const cue = () => { out.cues += 1; };
   const eat = regex => { const match = text.match(regex); if (match) { text = text.replace(match[0], ' '); cue(); } return match; };
 
-  if (/\b(recomec\w+|novo set|do zero|reset|limpa\w*|start over|new build|nouveau|nuevo set)\b/.test(text)) { out.action = 'reset'; cue(); text = text.replace(/\b(novo set|new build|nuevo set)\b/, ' '); }
+  if (!/\b(exo|over)/.test(text) && /\b(recomec\w+|reinicia\w*|nova conversa|novo set|do zero|reset|limpa\w*|start over|new build|nouveau|nuevo set)\b/.test(text)) { out.action = 'reset'; cue(); text = text.replace(/\b(recomec\w+|reinicia\w*|novo set|nova conversa|do zero|reset|limpa\w*|start over|new build|nouveau|nuevo set)\b/, ' '); out.pureReset = !text.replace(/\b(a|o|tudo|conversa|chat|set|por favor|quero|um|all|the)\b/g, '').trim(); }
+  // Forjamagia: "exo pa no amuleto", "over de 20 de força no chapéu", "pode usar exo", "tira o exo do cinto".
+  if (/\b(exo\w*|over\w*|forj\w+|fm)\b/.test(text)) {
+    const slot = Object.entries(SLOT_WORDS).find(([, words]) => word(words).test(text))?.[0] || null;
+    const no = /\b(sem|nao|tira\w*|remov\w+|limpa\w*|without|remove|sans|enleve\w*|sin|quita\w*)\b/.test(text);
+    let rest = text; const found = [];
+    for (const [key, words] of FORGE_WORDS) {
+      const pattern = new RegExp(`(?<![\\w])(?:(\\d{1,4})\\s*%?\\s*(?:de |of |en )?)?(?:${words})(?:\\s*(?:de |:|=)?\\s*(\\d{1,4})(?!\\d|\\w))?(?![\\w])`);
+      const match = (slot ? rest.replace(word(SLOT_WORDS[slot]), ' ') : rest).match(pattern);
+      if (match && !['sem', 'no'].includes(match[0].trim())) { found.push({ key, value: Number(match[1] || match[2]) || null }); rest = rest.replace(match[0], ' '); }
+    }
+    const noExo = /\b(?:sem|nao(?: \w+){0,3}|no|not|without|sans|sin)\s+exo/.test(text);
+    const kind = /\bover/.test(text) ? 'over' : 'exo';
+    if (slot && (found.length || no)) return { ...out, action: 'forge', cues: 1, forge: { slot, nth: /\b(segundo|outro|2o?|second|deuxieme)\b/.test(text) ? 1 : 0, clear: no, kind, rows: found } };
+    const keys = found.map(row => row.key).filter(key => ['ap', 'mp', 'range'].includes(key));
+    if (kind === 'exo' && !slot) { out.patch.exo = Object.fromEntries((keys.length ? keys : ['ap', 'mp', 'range']).map(key => [key, !noExo])); cue(); text = text.replace(/\b(?:nao |sem |pode |posso |considera\w* |usa\w* |com |no |without |with |sans |avec |sin |con )*exo\w*\b(?:\s*(?:de |e |and |et |y |,)?\s*(?:pa|pm|al|ap|mp|alcance|range|po)\b)*/, ' '); }
+    else if (kind === 'over') return { ...out, action: 'forgeHelp', cues: 1 };
+  }
+  // Pergaminhos.
+  const scroll = text.match(/\b(?:(sem|nao (?:to |tou |estou |sou |esta |ta )?(?:com )?|not |no |un|sans |sin |non )\s*)?(?:full )?(?:pergaminh\w*|scroll\w*|parchemin\w*|pergamin\w*)(?:\s*(?:em |de |a )?(\d{1,3}))?/);
+  if (scroll) { out.patch.scroll = scroll[1] ? 0 : scroll[2] ? Math.min(100, +scroll[2]) : 100; cue(); text = text.replace(scroll[0], ' '); }
   const asksStat = original.match(/^(?:e )?(?:quant[oa]s?(?: de| tenho de| tem de| eu tenho de)?|qual (?:e |o |a |meu |minha |é )*|how much|combien de|cuant[oa]s?(?: de)?) ?(.{2,30}?)(?: (?:tem|tenho|esse set|o set|do i have|ai-je|tengo).*)?\??$/);
   if (asksStat && !/\d|cust|preco|price|kama/.test(original)) { const key = Object.keys(STAT_WORDS).find(name => word(STAT_WORDS[name]).test(asksStat[1])); if (key) return { ...out, action: 'stat', stat: key, cues: 1 }; }
   if (/^(oi+|ola|opa|eai|e ai|salve|bom dia|boa tarde|boa noite|hi|hello|hey|salut|bonjour|hola|buenas)[\s!.,?]*(?:tudo bem|beleza|blz)?[\s!.?]*$/.test(original)) return { ...out, action: 'greet', cues: 1 };
@@ -127,7 +156,7 @@ export function parseMessage(message, gear, langIndex = 0, current = null) {
   if (eat(/\b(perfeit\w+|jet max|max roll|roll maximo|rolagem maxima)\b/)) out.patch.roll = 'max';
   if (eat(/\b(corpo a corpo|cac|melee|mele|close combat)\b/)) out.patch.distance = 'melee';
   else if (eat(/\b(a distancia|distancia|ranged|distance)\b/)) out.patch.distance = 'ranged';
-  const klass = text.match(word(CLASSES.join('|'))); if (klass) { out.patch.className = klass[0]; cue(); text = text.replace(klass[0], ' '); }
+  const klass = text.match(word(CLASSES.join('|'))); if (klass) { out.patch.breed = BREEDS[klass[0]]; cue(); text = text.replace(klass[0], ' '); }
 
   // Metas numéricas.
   for (const [key, words] of Object.entries(STAT_WORDS)) {
@@ -189,8 +218,9 @@ export function defaultTargets(level) {
 export function applyParsed(base, parsed, { gear, ids = null, defaults }) {
   const fresh = parsed.action === 'reset';
   const intent = structuredClone(fresh ? defaults : base);
-  const { targets, ...patch } = parsed.patch;
+  const { targets, exo, ...patch } = parsed.patch;
   Object.assign(intent, patch);
+  if (exo) intent.exo = { ...intent.exo, ...exo };
   if (parsed.styles) {
     const start = { damage: 1, survival: 0.55, extras: {} };
     for (const name of parsed.styles) { const preset = STYLE_PRESETS[name]; start.damage = preset.damage ?? start.damage; start.survival = preset.survival ?? start.survival; Object.assign(start.extras, preset.extras); }

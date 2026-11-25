@@ -2,7 +2,7 @@ const DEFAULT_ATTRIBUTES = [
   'data-field', 'data-resource-field', 'data-resource-draft', 'data-resource-picker-search', 'data-sale-field',
   'data-sales-filter', 'data-dashboard-filter', 'data-consent-field', 'data-resource-new', 'data-craft-field',
   'data-craft-ingredient-field', 'data-craft-item-search', 'data-craft-sale-field', 'data-inventory-adjust-field',
-  'data-food-field', 'data-pet-price', 'data-explorer-field', 'data-explorer-price', 'data-global-dashboard-filter', 'data-global-sales-filter', 'data-inventory-filter'
+  'data-food-field', 'data-pet-price', 'data-explorer-field', 'data-explorer-price', 'data-global-dashboard-filter', 'data-global-sales-filter', 'data-inventory-filter', 'data-builder-option', 'data-builder-forge'
 ];
 
 function escapeSelectorValue(value) {

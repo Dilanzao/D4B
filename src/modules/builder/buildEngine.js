@@ -1,4 +1,4 @@
-import { SET_BONUS_ID, SLOTS, SLOT_OF_TYPE, STAT, STAT_IDS, STAT_INDEX, TYPE_DOFUS, TYPE_PRYSMARADITE } from './gearSchema.js';
+import { SET_BONUS_ID, SLOTS, UNIQUE_EXOS, isExo, isForgeable, SLOT_OF_TYPE, STAT, STAT_IDS, STAT_INDEX, TYPE_DOFUS, TYPE_PRYSMARADITE } from './gearSchema.js';
 
 const N = STAT_IDS.length;
 const S = Object.fromEntries(Object.entries(STAT).map(([key, id]) => [key, STAT_INDEX[id]]));
@@ -12,7 +12,7 @@ const CAP = { ap: 12, mp: 6, range: 6, res: 50 };
 const TYPICAL = { wisdom: 400, prospecting: 350, initiative: 4000, lock: 110, dodge: 110, heals: 150, critical: 70, apParry: 110, mpParry: 110, apReduction: 110, mpReduction: 110, pushDamage: 250, summons: 5, pods: 1500, range: 5, criticalRes: 100, pushRes: 150, trapDamage: 60, reflect: 100 };
 
 export function defaultIntent() {
-  return { level: 200, elements: ['strength'], damage: 1, survival: 0.55, extras: {}, targets: {}, noCrit: false, roll: 'average', distance: 'any', craftable: false, noDofus: false, preferOwned: false, locked: [], banned: [], className: '' };
+  return { level: 200, elements: ['strength'], damage: 1, survival: 0.55, extras: {}, targets: {}, noCrit: false, roll: 'average', distance: 'any', craftable: false, noDofus: false, preferOwned: false, locked: [], banned: [], breed: 0, scroll: null, exo: { ap: false, mp: false, range: false }, forge: {}, profile: null };
 }
 
 function vector(effects, roll) {
@@ -46,13 +46,15 @@ export function pointsToStat(points) {
   return value + Math.floor(left / 4);
 }
 
+// Pergaminhos: o que a pessoa disse ou, sem dizer, 100 a partir do nível 100.
+export const scrollOf = intent => intent.scroll ?? (intent.level >= 100 ? 100 : 0);
+
 function baseStats(intent) {
   const base = new Float64Array(N);
   base[S.ap] = intent.level >= 100 ? 7 : 6;
   base[S.mp] = 3; base[S.prospecting] = 100;
   const points = (intent.level - 1) * 5;
-  // Personagem com pergaminhos (100 em tudo a partir do nível 100) e pontos no(s) elemento(s) pedido(s).
-  if (intent.level >= 100) for (const key of ['strength', 'intelligence', 'chance', 'agility', 'vitality', 'wisdom']) base[S[key]] += 100;
+  for (const key of ['strength', 'intelligence', 'chance', 'agility', 'vitality', 'wisdom']) base[S[key]] += scrollOf(intent);
   if (intent.damage < 0.4 || !intent.elements.length) base[S.vitality] += points;
   else for (const element of intent.elements) base[S[element]] += pointsToStat(Math.floor(points / intent.elements.length));
   return base;
@@ -63,14 +65,16 @@ export function maxHp(stats, level) { return 50 + level * 5 + stats[S.vitality];
 // Dano de um feitiço genérico do nível, na média dos elementos pedidos, com a chance de crítico do equipamento.
 export function spellDamage(stats, intent) {
   const elements = intent.elements.length ? intent.elements : ['strength'];
-  const base = 8 + intent.level * 0.16;
-  const chance = intent.noCrit ? 0 : Math.min(100, Math.max(0, 10 + stats[S.critical])) / 100;
+  // Com a raça escolhida, o perfil vem dos feitiços dela.
+  const base = intent.profile?.base || 8 + intent.level * 0.16;
+  const critBase = intent.profile?.critBase || base * 1.2;
+  const chance = intent.noCrit ? 0 : Math.min(100, Math.max(0, (intent.profile?.crit ?? 10) + stats[S.critical])) / 100;
   const distance = intent.distance === 'melee' ? stats[S.meleeDamage] : intent.distance === 'ranged' ? stats[S.rangedDamage] : (stats[S.meleeDamage] + stats[S.rangedDamage]) / 2;
   let total = 0;
   for (const element of elements) {
     const factor = 1 + Math.max(0, stats[S[ELEMENTS[element].stat]] + stats[S.power]) / 100;
     const flat = stats[S.damage] + stats[S[ELEMENTS[element].flat]];
-    total += (1 - chance) * (base * factor + flat) + chance * (base * 1.2 * factor + flat + stats[S.criticalDamage]);
+    total += (1 - chance) * (base * factor + flat) + chance * (critBase * factor + flat + stats[S.criticalDamage]);
   }
   return Math.max(1, total / elements.length * (1 + (stats[S.spellDamage] + distance) / 100));
 }
@@ -97,8 +101,22 @@ function conditionGap(node, stats, setBonuses) {
 }
 
 function context(gear, intent) {
-  const vectors = vectorsFor(gear, intent.roll);
-  return { gear, intent, vectors, base: baseStats(intent), stats: new Float64Array(N), counts: new Map(), owned: new Set(intent.ownedIds || []) };
+  let vectors = vectorsFor(gear, intent.roll);
+  // Itens forjados: o valor informado substitui a linha do item.
+  const forged = Object.entries(intent.forge || {});
+  const exoOwners = { ap: new Set(), mp: new Set(), range: new Set() };
+  if (forged.length) {
+    const own = new Map(); const byId = new Map(gear.items.map(item => [item.i, item]));
+    for (const [id, values] of forged) {
+      const item = byId.get(Number(id)); if (!isForgeable(item)) continue;
+      const v = Float64Array.from(vectors.items.get(item.i));
+      for (const [key, value] of Object.entries(values)) { v[S[key]] = value; if (exoOwners[key] && value > 0 && isExo(item, key)) exoOwners[key].add(item.i); }
+      own.set(item.i, v);
+    }
+    const base = vectors.items;
+    vectors = { ...vectors, items: { get: id => own.get(id) || base.get(id) } };
+  }
+  return { gear, intent, vectors, exoOwners, autoExo: UNIQUE_EXOS.filter(key => intent.exo?.[key]), base: baseStats(intent), stats: new Float64Array(N), counts: new Map(), owned: new Set(intent.ownedIds || []) };
 }
 
 function sumStats(ctx, items) {
@@ -110,6 +128,8 @@ function sumStats(ctx, items) {
     for (let i = 0; i < N; i += 1) stats[i] += v[i];
     if (item.s) counts.set(item.s, (counts.get(item.s) || 0) + 1);
   }
+  // Exo liberado: +1, desde que nenhuma peça vestida já tenha esse exo.
+  for (const key of ctx.autoExo) if (items.some(isForgeable) && !items.some(item => item && ctx.exoOwners[key].has(item.i))) stats[S[key]] += 1;
   let bonuses = 0;
   for (const [id, count] of counts) {
     if (count < 2) continue;
@@ -157,6 +177,17 @@ function gradient(ctx) {
   return out;
 }
 const dot = (a, b) => { let sum = 0; for (let i = 0; i < N; i += 1) sum += a[i] * b[i]; return sum; };
+
+// Onde o site supõe cada exo liberado: uma peça forjável sem essa linha, um exo por peça.
+function assignExos(ctx, items) {
+  const out = {}; const taken = new Set(Object.keys(ctx.intent.forge || {}).map(Number));
+  for (const key of ctx.autoExo) {
+    if (items.some(item => item && ctx.exoOwners[key].has(item.i))) continue;
+    const item = items.find(row => isForgeable(row) && !taken.has(row.i) && isExo(row, key)) || items.find(row => isForgeable(row) && isExo(row, key));
+    if (item) { out[key] = item.i; taken.add(item.i); }
+  }
+  return out;
+}
 
 const twoHandedClash = items => items.some(item => item?.h === 2) && items.some(item => item && SLOT_OF_TYPE[item.t] === 'shield');
 
@@ -293,7 +324,7 @@ export function describeBuild(gear, ids, rawIntent) {
   const sets = gear.sets.filter(set => (ctx.counts.get(set.i) || 0) > 1).map(set => ({ set, count: ctx.counts.get(set.i) }));
   const broken = items.filter(item => item?.c && conditionGap(item.c, raw, bonuses) > 0).map(item => item.i);
   const missing = Object.entries(intent.targets).map(([key, want]) => ({ key, want, got: Math.floor(targetValue(raw, key, intent.level)) })).filter(row => row.got < row.want);
-  return { items, stats, sets, broken, missing, hp: Math.floor(maxHp(raw, intent.level)), ehp: Math.round(effectiveHp(raw, intent.level)), damage: spellDamage(raw, intent), res: averageRes(raw), capped: { ap: Math.min(CAP.ap, stats.ap), mp: Math.min(CAP.mp, stats.mp), range: Math.min(CAP.range, stats.range) } };
+  return { items, stats, raw, sets, exos: assignExos(ctx, items), broken, missing, hp: Math.floor(maxHp(raw, intent.level)), ehp: Math.round(effectiveHp(raw, intent.level)), damage: spellDamage(raw, intent), res: averageRes(raw), capped: { ap: Math.min(CAP.ap, stats.ap), mp: Math.min(CAP.mp, stats.mp), range: Math.min(CAP.range, stats.range) } };
 }
 
 // Melhores trocas para um espaço, com o efeito no set inteiro.
@@ -311,4 +342,58 @@ export function alternatives(gear, ids, rawIntent, slotIndex, limit = 4) {
     const after = describeBuild(gear, next, intent);
     return { item, damage: (after.damage / now.damage - 1) * 100, hp: after.hp - now.hp, ap: after.capped.ap - now.capped.ap, mp: after.capped.mp - now.capped.mp, broken: after.broken.length };
   });
+}
+
+const SPELL_STAT = { ...ELEMENTS, neutral: { stat: 'strength', flat: 'neutralDamage' } };
+const RES_OF = { strength: 'earthRes', intelligence: 'fireRes', chance: 'waterRes', agility: 'airRes', neutral: 'neutralRes' };
+export const gradeFor = (spell, level) => [...spell.g].reverse().find(grade => grade.l <= level) || null;
+
+// Dano de um feitiço com o set: cada linha do jogo, normal e crítico, contra a resistência do alvo.
+export function testSpell(raw, grade, intent, targetRes = 0) {
+  const chance = intent.noCrit || !grade.c ? 0 : Math.min(100, Math.max(0, grade.c + raw[S.critical])) / 100;
+  const ranged = grade.r[1] > 1;
+  const final = (1 + (raw[S.spellDamage] + (ranged ? raw[S.rangedDamage] : raw[S.meleeDamage])) / 100) * (1 - Math.min(CAP.res, targetRes) / 100);
+  const value = (base, element, critical) => {
+    const pick = element === 'best' ? Object.keys(ELEMENTS).reduce((a, b) => (raw[S[ELEMENTS[b].stat]] > raw[S[ELEMENTS[a].stat]] ? b : a)) : element;
+    const { stat, flat } = SPELL_STAT[pick];
+    return Math.max(0, Math.floor((Math.floor(base * (1 + Math.max(0, raw[S[stat]] + raw[S.power]) / 100)) + raw[S.damage] + raw[S[flat]] + (critical ? raw[S.criticalDamage] : 0)) * final));
+  };
+  const lines = (rows, critical) => rows.map(([element, min, max, steal, conditional]) => ({ element, steal: Boolean(steal), conditional: Boolean(conditional), min: value(min, element, critical), max: value(max, element, critical) }));
+  const normal = lines(grade.d, false);
+  const critical = lines(grade.k.length ? grade.k : grade.d, true);
+  const average = rows => rows.filter(row => !row.conditional).reduce((sum, row) => sum + (row.min + row.max) / 2, 0);
+  return { normal, critical, chance, expected: average(normal) * (1 - chance) + average(critical) * chance };
+}
+
+// Melhor sequência de um turno no mesmo alvo: respeita PA, lançamentos por alvo e variantes exclusivas.
+export function bestTurn(raw, breed, intent, ap, targetRes = 0) {
+  const groups = new Map();
+  for (const spell of breed.s) {
+    const grade = gradeFor(spell, intent.level);
+    if (!grade || !grade.a || !grade.d.some(line => !line[4])) continue;
+    const limit = grade.w > 0 ? 1 : Math.min(grade.g || 99, grade.t || 99);
+    groups.set(spell.v, [...(groups.get(spell.v) || []), { spell, ap: grade.a, limit, value: testSpell(raw, grade, intent, targetRes).expected }]);
+  }
+  let best = Array.from({ length: ap + 1 }, () => ({ value: 0, casts: [] }));
+  for (const options of groups.values()) {
+    const next = best.map(row => row);
+    for (const option of options) for (let count = 1; count <= option.limit && count * option.ap <= ap; count += 1) for (let spent = count * option.ap; spent <= ap; spent += 1) {
+      const from = best[spent - count * option.ap]; const value = from.value + count * option.value;
+      if (value > next[spent].value) next[spent] = { value, casts: [...from.casts, { spell: option.spell, count }] };
+    }
+    best = next;
+  }
+  return best[ap];
+}
+
+// Resume os feitiços da raça nos elementos do set, para o montador otimizar com eles.
+export function spellProfile(breed, intent) {
+  const rows = [];
+  for (const spell of breed?.s || []) {
+    const grade = gradeFor(spell, intent.level); if (!grade) continue;
+    grade.d.forEach((line, index) => { if (!line[4] && (line[0] === 'best' || intent.elements.includes(line[0]))) { const crit = grade.k[index] || line; rows.push([(line[1] + line[2]) / 2, (crit[1] + crit[2]) / 2, grade.c]); } });
+  }
+  if (rows.length < 2) return null;
+  const mean = index => rows.reduce((sum, row) => sum + row[index], 0) / rows.length;
+  return { base: mean(0), critBase: mean(1), crit: mean(2) };
 }

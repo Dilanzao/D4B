@@ -1,6 +1,6 @@
-import { alternatives, defaultIntent, describeBuild, optimize } from './buildEngine.js';
+import { alternatives, defaultIntent, describeBuild, optimize, scrollOf, spellProfile } from './buildEngine.js';
 import { applyParsed, defaultTargets, parseMessage } from './chatParser.js';
-import { LANGUAGES, SLOTS, SLOT_OF_TYPE, itemName } from './gearSchema.js';
+import { FORGE_STATS, LANGUAGES, SLOTS, SLOT_OF_TYPE, UNIQUE_EXOS, forgeLimit, isExo, isForgeable, itemName, naturalMax } from './gearSchema.js';
 import { t } from '../../components/common.js';
 import { formatKamas, formatNumber } from '../../utils/currency.js';
 
@@ -13,20 +13,34 @@ const write = (key, value) => { try { localStorage.setItem(key, JSON.stringify(v
 const cleanIds = ids => SLOTS.map((_, index) => Number(ids?.[index]) || null);
 const list = value => (Array.isArray(value) ? value.map(Number).filter(Boolean) : []);
 
+function cleanStats(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  return Object.fromEntries(['ap', 'mp', 'range', 'hp', 'damage', 'res'].map(key => [key, Math.round(Number(raw[key])) || 0]));
+}
+
+function cleanForge(raw) {
+  const out = {};
+  for (const [id, values] of Object.entries(raw && typeof raw === 'object' ? raw : {}).slice(0, 60)) {
+    const rows = Object.entries(values && typeof values === 'object' ? values : {}).filter(([key, value]) => FORGE_STATS.includes(key) && Number.isFinite(value)).map(([key, value]) => [key, Math.trunc(value)]);
+    if (Number(id) && rows.length) out[Number(id)] = Object.fromEntries(rows);
+  }
+  return out;
+}
+
 function cleanIntent(raw) {
   const base = startIntent();
   if (!raw || typeof raw !== 'object') return base;
   const numbers = value => Object.fromEntries(Object.entries(value && typeof value === 'object' ? value : {}).filter(([key, item]) => /^[a-zA-Z]+$/.test(key) && Number.isFinite(item)));
   return { ...base, level: Math.min(200, Math.max(1, Math.trunc(Number(raw.level) || 200))), elements: (Array.isArray(raw.elements) ? raw.elements : base.elements).filter(item => ['strength', 'intelligence', 'chance', 'agility'].includes(item)),
     damage: Number(raw.damage) || base.damage, survival: Number(raw.survival) || base.survival, extras: numbers(raw.extras), targets: numbers(raw.targets), customTargets: Boolean(raw.customTargets), noCrit: Boolean(raw.noCrit), craftable: Boolean(raw.craftable), noDofus: Boolean(raw.noDofus), preferOwned: Boolean(raw.preferOwned),
-    roll: raw.roll === 'max' ? 'max' : 'average', distance: ['melee', 'ranged'].includes(raw.distance) ? raw.distance : 'any', className: String(raw.className || '').slice(0, 30), locked: list(raw.locked), banned: list(raw.banned) };
+    roll: raw.roll === 'max' ? 'max' : 'average', distance: ['melee', 'ranged'].includes(raw.distance) ? raw.distance : 'any', breed: Math.trunc(Number(raw.breed)) || 0, scroll: Number.isFinite(raw.scroll) ? Math.min(100, Math.max(0, Math.trunc(raw.scroll))) : null, exo: Object.fromEntries(UNIQUE_EXOS.map(key => [key, Boolean(raw.exo?.[key])])), forge: cleanForge(raw.forge), locked: list(raw.locked), banned: list(raw.banned) };
 }
 
 export function createBuilderState() {
   const saved = read(BUILDER_KEY, {});
   const builds = read(BUILDS_KEY, []);
-  return { status: 'idle', gear: null, busy: false, input: '', swapIndex: null, history: [], seed: 7, ids: Array.isArray(saved?.ids) ? cleanIds(saved.ids) : null, intent: cleanIntent(saved?.intent),
-    messages: (Array.isArray(saved?.messages) ? saved.messages : []).slice(-30).map(item => ({ role: item?.role === 'user' ? 'user' : 'bot', text: String(item?.text || '').slice(0, 4000) })),
+  return { status: 'idle', gear: null, breeds: null, selected: null, tab: 'stats', forging: false, showSwaps: false, pickBreed: false, targetRes: 0, dirty: false, saveName: '', busy: false, input: '', swapIndex: null, history: [], seed: 7, ids: Array.isArray(saved?.ids) ? cleanIds(saved.ids) : null, intent: cleanIntent(saved?.intent),
+    messages: (Array.isArray(saved?.messages) ? saved.messages : []).slice(-30).map(item => ({ role: item?.role === 'user' ? 'user' : 'bot', text: String(item?.text || '').slice(0, 4000), tags: Array.isArray(item?.tags) ? item.tags.slice(0, 20).map(tag => String(tag).slice(0, 120)) : [], stats: cleanStats(item?.stats) })),
     saved: (Array.isArray(builds) ? builds : []).map(item => ({ id: String(item?.id || '').replace(/[^\w-]/g, ''), name: String(item?.name || '').slice(0, 120), ids: cleanIds(item?.ids), intent: cleanIntent(item?.intent) })) };
 }
 
@@ -45,11 +59,20 @@ export function loadGear() {
   return gearPromise;
 }
 
+let breedsPromise = null;
+export function loadBreeds() {
+  breedsPromise ??= fetch('/data/breeds.json').then(response => { if (!response.ok) throw new Error(`HTTP ${response.status}`); return response.json(); }).then(data => data.breeds).catch(error => { breedsPromise = null; throw error; });
+  return breedsPromise;
+}
+export const currentBreed = builder => (builder.breeds || []).find(breed => breed.i === builder.intent.breed) || null;
+
 const langIndex = state => Math.max(0, LANGUAGES.indexOf(state.language));
 const signed = (value, suffix = '') => `${value >= 0 ? '+' : '−'}${Math.abs(value)}${suffix}`;
 const percent = (state, value) => `${value >= 0 ? '+' : '−'}${formatNumber(Math.abs(value), state.language, 1)}%`;
 const ownedIds = state => (state.craftInventory || []).filter(item => item.quantity > 0).map(item => Number(item.ankamaId)).filter(Boolean);
-const withOwned = (state, intent) => ({ ...intent, ownedIds: ownedIds(state) });
+// Pedido completo para o motor: estoque e perfil dos feitiços da raça.
+const withOwned = (state, intent) => ({ ...intent, ownedIds: ownedIds(state), profile: spellProfile((state.builder.breeds || []).find(breed => breed.i === intent.breed), intent) });
+const describe = (state, ids, intent) => describeBuild(state.builder.gear, ids, withOwned(state, intent));
 
 // Materiais diretos do set, com os preços que a pessoa ou a comunidade já informaram.
 export function buildCost(state, ids) {
@@ -81,36 +104,39 @@ function describeIntent(state, intent) {
   if (intent.preferOwned) parts.push(tr('owned'));
   if (intent.locked.length) parts.push(tr('locked', { count: intent.locked.length }));
   if (intent.banned.length) parts.push(tr('banned', { count: intent.banned.length }));
-  if (intent.className) parts.push(tr('className', { value: intent.className }));
-  return parts.join(', ');
+  const breed = (state.builder.breeds || []).find(row => row.i === intent.breed);
+  if (breed) parts.unshift(itemName(breed, state.language));
+  if (intent.scroll !== null) parts.push(scrollOf(intent) ? tr('scrolled', { value: scrollOf(intent) }) : tr('unscrolled'));
+  const exos = UNIQUE_EXOS.filter(key => intent.exo[key]);
+  if (exos.length) parts.push(tr('exoAllowed', { list: exos.map(key => tr(`stat.${key}`)).join(', ') }));
+  return parts.map(part => part.charAt(0).toUpperCase() + part.slice(1));
 }
 
 export function currentBuild(state) {
   const { gear, ids, intent } = state.builder;
-  return gear && ids ? describeBuild(gear, ids, intent) : null;
+  return gear && ids ? describe(state, ids, intent) : null;
 }
 
 function buildReply(state, before, build, result, parsed) {
   const { gear, intent } = state.builder;
   const tr = (key, vars) => t(state, `builder.${key}`, vars);
-  const number = value => formatNumber(value, state.language);
   const name = id => { const item = gear.item(id); return item ? itemName(item, state.language) : String(id); };
-  const lines = [tr('understood', { list: describeIntent(state, intent) }), tr('built', { ap: build.capped.ap, mp: build.capped.mp, range: build.capped.range, hp: number(build.hp), damage: number(Math.round(build.damage)), res: number(Math.round(build.res)) })];
+  const lines = [];
   if (before) lines.push(before.same ? tr('same') : tr('delta', { damage: signed(Math.round((build.damage / before.damage - 1) * 100), '%'), hp: signed(build.hp - before.hp) }));
   if (build.missing.length) lines.push(tr('missing', { list: build.missing.map(row => `${tr(`stat.${row.key}`)} ${row.got}/${row.want}`).join(', ') }));
   if (build.broken.length) lines.push(tr('broken', { list: build.broken.map(name).join(', ') }));
   if (result.rejected?.length) lines.push(tr('rejected', { list: result.rejected.slice(0, 6).map(name).join(', ') }));
   if (parsed?.notes?.includes('budget')) lines.push(tr('budget'));
-  return lines.join('\n');
+  return { text: lines.join('\n'), tags: describeIntent(state, intent), stats: { ...build.capped, hp: build.hp, damage: Math.round(build.damage), res: Math.round(build.res) } };
 }
 
 function explain(state, slots) {
   const { gear, ids, intent } = state.builder;
-  const now = describeBuild(gear, ids, intent);
+  const now = describe(state, ids, intent);
   const lines = ids.map((id, index) => {
     if (!id || (slots.length && !slots.includes(SLOTS[index]))) return null;
     const without = [...ids]; without[index] = null;
-    const other = describeBuild(gear, without, intent);
+    const other = describe(state, without, intent);
     const extra = ['ap', 'mp', 'range'].map(key => [key, now.stats[key] - other.stats[key]]).filter(([, value]) => value).map(([key, value]) => `${signed(value)} ${t(state, `builder.stat.${key}`)}`);
     const text = [t(state, 'builder.explainPart', { damage: percent(state, (1 - other.damage / now.damage) * 100), hp: signed(now.hp - other.hp) }), ...extra].join(', ');
     return t(state, 'builder.explainLine', { name: itemName(gear.item(id), state.language), text });
@@ -127,12 +153,15 @@ export function costReply(state) {
 function saveBuild(state) {
   const builder = state.builder;
   const intent = builder.intent;
-  const name = `${t(state, 'builder.level', { value: intent.level })} · ${intent.elements.map(key => t(state, `builder.stat.${key}`)).join(' + ') || t(state, 'builder.hp')}`;
-  builder.saved = [{ id: `build-${Date.now().toString(36)}`, name: name.charAt(0).toUpperCase() + name.slice(1), ids: [...builder.ids], intent: structuredClone(intent) }, ...builder.saved].slice(0, 40);
+  const breed = currentBreed(builder);
+  const auto = `${breed ? `${itemName(breed, state.language)} · ` : ''}${t(state, 'builder.level', { value: intent.level })} · ${intent.elements.map(key => t(state, `builder.stat.${key}`)).join(' + ') || t(state, 'builder.hp')}`;
+  const name = builder.saveName.trim().slice(0, 80) || auto.charAt(0).toUpperCase() + auto.slice(1);
+  builder.saveName = '';
+  builder.saved = [{ id: `build-${Date.now().toString(36)}`, name, ids: [...builder.ids], intent: structuredClone(intent) }, ...builder.saved].slice(0, 40);
 }
 
 const remember = builder => { if (builder.ids) builder.history = [...builder.history, { ids: [...builder.ids], intent: structuredClone(builder.intent) }].slice(-20); };
-const say = (builder, text) => { builder.messages.push({ role: 'bot', text }); };
+const say = (builder, message) => { builder.messages.push(typeof message === 'string' ? { role: 'bot', text: message } : { role: 'bot', ...message }); };
 
 // Antes do primeiro set, pergunta o que falta em vez de adivinhar. "Tanto faz" aceita o padrão.
 function missingInfo(builder, parsed) {
@@ -154,16 +183,16 @@ function statReply(state, key) {
 async function rebuild(state, intent, parsed, emit) {
   const builder = state.builder;
   const { gear } = builder;
-  const previous = builder.ids && parsed.action !== 'reset' && intent.level === builder.intent.level ? describeBuild(gear, builder.ids, intent) : null;
+  const previous = builder.ids && parsed.action !== 'reset' && intent.level === builder.intent.level ? describe(state, builder.ids, intent) : null;
   const oldIds = builder.ids;
   remember(builder);
   // As travas de "troca o anel" valem só para esta montagem.
   const temporary = intent.temporaryLocks; delete intent.temporaryLocks;
   const permanent = temporary ? builder.intent.locked.filter(id => !intent.banned.includes(id)) : intent.locked;
   const result = await optimize(gear, withOwned(state, intent), { seed: builder.seed, start: parsed.action === 'reset' ? null : builder.ids, onProgress: value => { builder.progress = Math.round(value * 100); const node = document.querySelector('[data-builder-progress]'); if (node) node.textContent = `${builder.progress}%`; } });
-  builder.ids = result.ids; builder.asking = null; builder.known = null;
+  builder.ids = result.ids; builder.dirty = false; builder.selected = null; builder.forging = false; builder.showSwaps = false; builder.asking = null; builder.known = null;
   builder.intent = { ...intent, locked: permanent.filter(id => !result.rejected.includes(id)) };
-  const build = describeBuild(gear, builder.ids, builder.intent);
+  const build = describe(state, builder.ids, builder.intent);
   say(builder, buildReply(state, previous ? { damage: previous.damage, hp: previous.hp, same: oldIds.join() === result.ids.join() } : null, build, result, parsed));
   emit();
 }
@@ -171,23 +200,26 @@ async function rebuild(state, intent, parsed, emit) {
 export async function sendBuilderMessage(state, message, emit) {
   const builder = state.builder; const text = String(message || '').trim().slice(0, 500);
   if (!text || builder.busy || !builder.gear) return;
-  builder.input = ''; builder.swapIndex = null;
+  builder.input = '';
   builder.messages.push({ role: 'user', text });
-  const needs = ['stat', 'undo', 'explain', 'cost', 'save', 'reroll', 'keep-slot', 'swap-slot'];
+  const needs = ['stat', 'forge', 'undo', 'explain', 'cost', 'save', 'reroll', 'keep-slot', 'swap-slot'];
   builder.busy = true; builder.progress = 0;
   emit();
   try {
     const parsed = parseMessage(text, builder.gear, langIndex(state), builder.ids);
+    if (parsed.action === 'reset' && parsed.pureReset) { startOver(state); return; }
     const missing = builder.ids || parsed.action ? null : missingInfo(builder, parsed);
     if (['help', 'greet', 'thanks'].includes(parsed.action)) say(builder, t(state, `builder.${parsed.action}`));
     else if (parsed.action === 'stat' && builder.ids) say(builder, statReply(state, parsed.stat));
+    else if (parsed.action === 'forgeHelp') say(builder, t(state, 'builder.forgeHelp'));
+    else if (parsed.action === 'forge' && builder.ids) say(builder, forgeFromChat(state, parsed.forge));
     else if (parsed.cues && missing) {
       builder.intent = applyParsed(builder.intent, parsed, { gear: builder.gear, defaults: startIntent() });
       builder.asking = missing;
       say(builder, t(state, missing === 'level' ? 'builder.askLevel' : 'builder.askElement'));
     }
     else if (!parsed.cues) say(builder, t(state, 'builder.unknown'));
-    else if (needs.includes(parsed.action) && !builder.ids && Object.keys(parsed.patch).length === 0) say(builder, t(state, 'builder.needBuild'));
+    else if (needs.includes(parsed.action) && !builder.ids && !(parsed.action === 'undo' && builder.history.length) && Object.keys(parsed.patch).length === 0) say(builder, t(state, 'builder.needBuild'));
     else if (parsed.action === 'undo') {
       const last = builder.history.pop();
       if (last) { builder.ids = last.ids; builder.intent = last.intent; }
@@ -201,7 +233,7 @@ export async function sendBuilderMessage(state, message, emit) {
         const heavy = builder.ids.filter((id, index) => id && ['hat', 'cloak', 'amulet', 'belt', 'boots'].includes(SLOTS[index]) && !builder.intent.locked.includes(id));
         parsed.banNames.push(...heavy.slice(0, 3)); builder.seed += 1;
       }
-      if (builder.ids) parsed.currentStats = describeBuild(builder.gear, builder.ids, builder.intent).stats;
+      if (builder.ids) parsed.currentStats = describe(state, builder.ids, builder.intent).stats;
       const intent = applyParsed(builder.intent, parsed, { gear: builder.gear, ids: builder.ids, defaults: startIntent() });
       await rebuild(state, intent, parsed, emit);
     }
@@ -234,11 +266,84 @@ export function swapItem(state, index, id) {
   const old = builder.ids[index];
   builder.ids = builder.ids.map((value, slot) => (slot === index ? id : value));
   builder.intent.locked = [...new Set([...builder.intent.locked.filter(other => other !== old), id])];
-  builder.swapIndex = null;
+  builder.showSwaps = false;
   persistBuilder(builder);
 }
 
 export const slotAlternatives = (state, index) => alternatives(state.builder.gear, state.builder.ids, withOwned(state, state.builder.intent), index);
-export function openSaved(state, id) { const builder = state.builder; const row = builder.saved.find(item => item.id === id); if (!row) return; remember(builder); builder.ids = [...row.ids]; builder.intent = structuredClone(row.intent); builder.swapIndex = null; persistBuilder(builder); }
+export function openSaved(state, id) { const builder = state.builder; const row = builder.saved.find(item => item.id === id); if (!row) return; remember(builder); builder.ids = [...row.ids]; builder.intent = structuredClone(row.intent); builder.selected = null; builder.dirty = false; persistBuilder(builder); }
 export function deleteSaved(state, id) { state.builder.saved = state.builder.saved.filter(item => item.id !== id); persistBuilder(state.builder); }
+// Limpa conversa e set, mantendo os salvos. "Desfazer" ainda traz o set de volta.
+export function startOver(state) {
+  const builder = state.builder;
+  remember(builder);
+  Object.assign(builder, { ids: null, intent: startIntent(), messages: [], asking: null, known: null, selected: null, showSwaps: false, dirty: false, input: '', saveName: '', seed: 7 });
+  persistBuilder(builder);
+}
+
+// Muda uma linha de um item. Valor vazio volta ao natural. Só um exo de PA, PM e alcance por personagem.
+export function setForge(state, id, key, value) {
+  const builder = state.builder; const item = builder.gear.item(id);
+  if (!isForgeable(item) || !FORGE_STATS.includes(key)) return null;
+  const forge = structuredClone(builder.intent.forge);
+  const row = { ...(forge[id] || {}) };
+  if (value === null) delete row[key];
+  else {
+    row[key] = Math.max(Math.min(0, value), Math.min(forgeLimit(item, key), Math.trunc(value)));
+    if (UNIQUE_EXOS.includes(key) && row[key] > 0 && isExo(item, key)) {
+      row[key] = 1;
+      for (const other of Object.keys(forge)) if (Number(other) !== id && builder.gear.item(Number(other)) && isExo(builder.gear.item(Number(other)), key)) { delete forge[other][key]; if (!Object.keys(forge[other]).length) delete forge[other]; }
+    }
+    if (row[key] === 0 && isExo(item, key)) delete row[key];
+  }
+  if (Object.keys(row).length) forge[id] = row; else delete forge[id];
+  builder.intent.forge = forge;
+  persistBuilder(builder);
+  return row[key] ?? null;
+}
+export function clearForge(state, id) { delete state.builder.intent.forge[id]; persistBuilder(state.builder); }
+
+function forgeFromChat(state, { slot, nth, clear, kind, rows }) {
+  const builder = state.builder; const tr = (key, vars) => t(state, `builder.${key}`, vars);
+  const ids = builder.ids.filter((id, index) => id && SLOTS[index] === slot);
+  const id = ids[Math.min(nth, ids.length - 1)]; const item = id ? builder.gear.item(id) : null;
+  if (!isForgeable(item)) return tr('forgeNo', { name: item ? itemName(item, state.language) : tr(`slot.${slot}`) });
+  const before = describe(state, builder.ids, builder.intent);
+  remember(builder);
+  const done = [];
+  if (clear && !rows.length) { clearForge(state, id); done.push(tr('forgeCleared')); }
+  for (const { key, value } of rows) {
+    if (clear) { setForge(state, id, key, null); done.push(`${tr(`stat.${key}`)}: ${tr('natural')}`); continue; }
+    const max = naturalMax(item, key);
+    // "over de 20" soma ao máximo; "exo 20" é o valor da linha nova.
+    const wanted = kind === 'over' ? max + (value || (max ? Math.max(1, Math.round(max * 0.1)) : 1)) : value || (UNIQUE_EXOS.includes(key) ? max + 1 : forgeLimit(item, key) > 20 ? 10 : 1);
+    const set = setForge(state, id, key, wanted);
+    done.push(`${set ?? 0} ${tr(`stat.${key}`)}${set !== null && set < wanted ? ` (${tr('forgeMax')})` : ''}`);
+  }
+  const after = describe(state, builder.ids, builder.intent);
+  return `${tr('forgeDone', { name: itemName(item, state.language), list: done.join(', ') })}\n${tr('delta', { damage: signed(Math.round((after.damage / before.damage - 1) * 100), '%'), hp: signed(after.hp - before.hp) })} ${tr('nowHas', { ap: after.capped.ap, mp: after.capped.mp, range: after.capped.range })}`;
+}
+
+// Opções visuais. O set atual é recalculado na hora; remontar fica a critério da pessoa.
+export function setBuilderOption(state, field, value) {
+  const builder = state.builder; const intent = builder.intent;
+  if (field === 'breed') intent.breed = Number(value) || 0;
+  else if (field === 'level') { const level = Math.min(200, Math.max(1, Math.trunc(Number(value)) || 1)); if (level !== intent.level) { intent.level = level; if (!intent.customTargets) intent.targets = defaultTargets(level); } }
+  else if (field === 'scroll') intent.scroll = String(value).trim() === '' ? null : Math.min(100, Math.max(0, Math.trunc(Number(value)) || 0));
+  else if (field.startsWith('exo-')) { const key = field.slice(4); if (UNIQUE_EXOS.includes(key)) intent.exo = { ...intent.exo, [key]: !intent.exo[key] }; }
+  else if (field === 'element') { const has = intent.elements.includes(value); intent.elements = has ? intent.elements.filter(item => item !== value) : [...intent.elements, value]; if (!intent.elements.length) intent.elements = [value]; }
+  else if (field === 'roll') intent.roll = intent.roll === 'max' ? 'average' : 'max';
+  else if (['noCrit', 'noDofus', 'craftable'].includes(field)) intent[field] = !intent[field];
+  else if (['ap', 'mp', 'range'].includes(field)) { const cap = field === 'ap' ? 12 : 6; const number = Math.min(cap, Math.max(0, Math.trunc(Number(value)) || 0)); intent.targets = { ...intent.targets, [field]: number }; if (!number) delete intent.targets[field]; intent.customTargets = true; }
+  else return;
+  builder.dirty = Boolean(builder.ids);
+  persistBuilder(builder);
+}
+
+export async function rebuildWithOptions(state, emit) {
+  const builder = state.builder; if (builder.busy || !builder.gear) return;
+  builder.busy = true; builder.progress = 0; emit();
+  try { await rebuild(state, structuredClone(builder.intent), { action: null }, emit); } finally { builder.busy = false; persistBuilder(builder); emit(); }
+}
+
 export function saveCurrent(state) { saveBuild(state); persistBuilder(state.builder); }

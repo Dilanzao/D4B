@@ -20,6 +20,9 @@ function packCondition(node) {
   return [node.relation, ...(node.children || []).map(packCondition)];
 }
 
+// Efeito especial em texto e bônus de feitiços de classe.
+const PASSIVES = new Set([163, 204, 205, 207, 208, 209, 226, 227, 240, 243, 245, 274, 276, 279]);
+const isPassive = effect => PASSIVES.has(effect.type.id);
 const equipment = {}; const sets = {};
 for (const lang of LANGS) {
   equipment[lang] = new Map((await json(`${API}/${lang}/items/equipment/all`)).items.map(item => [item.ankama_id, item]));
@@ -29,7 +32,7 @@ const version = (await json(`${API}/meta/version`)).version;
 
 // Itens internos do jogo, acessórios que exigem condição de conta e o Amuleto de Jiva (nível 1, inacessível).
 const blocked = item => item.ankama_id === 2155 || /\bGMs?\b|Hide Effect Test/i.test(equipment.en.get(item.ankama_id)?.name || '') || JSON.stringify(item.conditions || '').includes('"id":252');
-const usable = [...equipment.pt.values()].filter(item => SLOT_OF_TYPE[item.type.id] && !blocked(item) && packEffects(item.effects).length);
+const usable = [...equipment.pt.values()].filter(item => SLOT_OF_TYPE[item.type.id] && !blocked(item) && (packEffects(item.effects).length || (item.effects || []).some(isPassive)));
 
 const weapons = usable.filter(item => item.is_weapon).map(item => item.ankama_id);
 const twoHanded = new Set();
@@ -48,8 +51,9 @@ const items = usable.map(item => {
   if (item.recipe?.length) row.r = item.recipe.flatMap(line => [line.item_ankama_id, line.quantity]);
   if (item.conditions) row.c = packCondition(item.conditions);
   if (twoHanded.has(item.ankama_id)) row.h = 2;
-  // Efeito passivo em texto: não entra no cálculo, mas a tela avisa.
-  if ((item.effects || []).some(effect => effect.type.id === 163)) row.x = 1;
+  // Efeitos passivos em texto, nos quatro idiomas: a tela mostra, o cálculo não usa.
+  if ((item.effects || []).some(isPassive)) row.x = LANGS.map(lang => (equipment[lang].get(item.ankama_id)?.effects || []).filter(isPassive).map(effect => effect.formatted.replace(/\{\{[^}]*?::([^}]*)\}\}/g, '$1').replace(/<[^>]+>/g, '').trim()).join('\n'));
+  if ((equipment.en.get(item.ankama_id)?.effects || []).some(effect => /No future smithmagic/i.test(effect.type.name))) row.f = 1;
   return row;
 });
 const setRows = [...sets.pt.values()].filter(set => !set.contains_cosmetics_only && set.equipment_ids.some(id => ids.has(id))).map(set => ({

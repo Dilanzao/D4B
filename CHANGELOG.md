@@ -2,6 +2,8 @@
 
 ## Não lançado
 
+- Montador de sets: personagem com espaços no corpo, raças e teste de feitiços, detalhes e forjamagia (exo e over) por item, bônus de conjunto e efeitos passivos, pergaminhos, nova conversa e nome ao salvar.
+
 - Novo montador de sets por conversa, com dados do DofusDude, ligado ao estoque, aos crafts e aos pets.
 
 - Up de pets: XP de mais itens (fabricados, essências e chaves) pela planilha comunitária de GoldenSpirit; valores divergentes ficam marcados como "a confirmar" e editáveis.

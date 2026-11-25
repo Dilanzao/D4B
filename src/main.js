@@ -47,8 +47,8 @@ import { parseKamas, formatNumber } from './utils/currency.js';
 import { createId, nowIso, toIsoLocalDateTime } from './utils/identifiers.js';
 import { validateSimulation } from './utils/validation.js';
 import { petCreature, renderBuilderPage } from './modules/builder/builderPage.js';
-import { banItem, deleteSaved, loadGear, openSaved, saveCurrent, sendBuilderMessage, swapItem, toggleLock } from './modules/builder/builderController.js';
-import { itemName } from './modules/builder/gearSchema.js';
+import { banItem, deleteSaved, loadBreeds, loadGear, openSaved, rebuildWithOptions, saveCurrent, sendBuilderMessage, setBuilderOption, setForge, startOver, swapItem, toggleLock } from './modules/builder/builderController.js';
+import { forgeLimit, itemName, UNIQUE_EXOS } from './modules/builder/gearSchema.js';
 import { renderResourceExplorer } from './modules/pets/resourceExplorer.js';
 import { AUTO_FOOD, BAG, RATION, foodAnkamaId, foodId, methodForPlan, normalizeAmount, normalizeFood, planResourceLines } from './modules/pets/petPlan.js';
 import { ALL_FEED_IDS, applyPetCommunityPrices, emptyPetCommunity, getFoodPrice, setFoodPrice, simulationAnkamaIds } from './modules/pets/petCommunity.js';
@@ -263,7 +263,7 @@ async function ensureGear() {
   const builder = state.builder;
   if (builder.gear || builder.status === 'loading') return;
   builder.status = 'loading';
-  try { builder.gear = await loadGear(); builder.status = 'ready'; } catch { builder.status = 'error'; }
+  try { [builder.gear, builder.breeds] = await Promise.all([loadGear(), loadBreeds().catch(() => [])]); builder.status = 'ready'; } catch { builder.status = 'error'; }
   emit();
   scrollBuilderLog();
 }
@@ -282,7 +282,15 @@ function handleBuilderAction(action, button) {
   else if (action === 'builder-open') { openSaved(state, button.dataset.id); emit(); }
   else if (action === 'builder-delete') { deleteSaved(state, button.dataset.id); emit(); }
   else if (action === 'builder-lock') { toggleLock(state, id); emit(); }
-  else if (action === 'builder-swap') { builder.swapIndex = builder.swapIndex === index ? null : index; emit(); }
+  else if (action === 'builder-select') { builder.selected = builder.selected === index ? null : index; builder.showSwaps = false; builder.forging = false; emit(); if (builder.selected !== null && window.innerWidth < 900) requestAnimationFrame(() => requestAnimationFrame(() => app.querySelector('.panel')?.scrollIntoView({ block: 'start' }))); }
+  else if (action === 'builder-tab') { builder.tab = button.dataset.field; emit(); }
+  else if (action === 'builder-forge-mode') { builder.forging = !builder.forging; emit(); }
+  else if (action === 'builder-swap') { builder.showSwaps = !builder.showSwaps; emit(); }
+  else if (action === 'builder-new') { startOver(state); emitBuilder(); }
+  else if (action === 'builder-build') void rebuildWithOptions(state, emitBuilder);
+  else if (action === 'builder-pick-breed') { builder.pickBreed = !builder.pickBreed; emit(); }
+  else if (action === 'builder-option') { setBuilderOption(state, button.dataset.field, button.dataset.value); if (button.dataset.field === 'breed') builder.pickBreed = false; emit(); }
+  else if (action === 'builder-forge-clear') { setForge(state, id, button.dataset.field, null); emit(); }
   else if (action === 'builder-use') { swapItem(state, index, id); emit(); }
   else if (action === 'builder-ban') void banItem(state, id, emitBuilder);
   else if (action === 'builder-pet') {
@@ -1130,6 +1138,9 @@ app.addEventListener('toggle',event=>{
 
 app.addEventListener('change',event=>{
   const accountField=event.target.dataset.accountField;if(accountField){updateAccountDraft(accountField,event.target);}
+  if(event.target.dataset.builderOption){const field=event.target.dataset.builderOption;if(field==='targetRes')state.builder.targetRes=Math.min(50,Math.max(0,Number(event.target.value)||0));else setBuilderOption(state,field,event.target.value);emit();}
+  if(event.target.dataset.builderForge){const raw=event.target.value.trim(),value=Number(raw);setForge(state,Number(event.target.dataset.id),event.target.dataset.builderForge,raw===''||!Number.isFinite(value)?null:value);emit();}
+  if(event.target.matches('[data-builder-exo]')&&event.target.value){const key=event.target.value,id=Number(event.target.dataset.id),item=state.builder.gear.item(id);setForge(state,id,key,UNIQUE_EXOS.includes(key)?1:Math.min(10,forgeLimit(item,key)));emit();}
   const field=event.target.dataset.field;if(field&&field!=='creatureQuery')updateEditorField(field,event.target.value,true);
   if(event.target.dataset.foodField){updateFood(event.target);emit();if(event.target.dataset.foodField==='price')publishFood(event.target.dataset.id);}
   if(event.target.dataset.petPrice){const bag=event.target.dataset.petPrice==='bag',price=parseKamas(event.target.value);rememberPetPrice(event.target.dataset.petPrice,price);emit();void publishPetPrice({ankamaId:bag?BAG_ANKAMA_ID:RATION_ANKAMA_ID,name:t({language:'pt-BR'},bag?'simulation.kolitokenBag':'simulation.marketFood'),price,bag});}
@@ -1152,6 +1163,7 @@ app.addEventListener('change',event=>{
 
 app.addEventListener('input',event=>{
   const accountField=event.target.dataset.accountField;if(accountField){updateAccountDraft(accountField,event.target);return;}
+  if(event.target.matches('[data-builder-save-name]')){state.builder.saveName=event.target.value;return;}
   if(event.target.matches('[data-builder-input]')){state.builder.input=event.target.value;return;}
   if(event.target.matches('[data-resource-picker-search]')&&state.simulationEditor){const editor=state.simulationEditor;editor.resourceQuery=event.target.value;editor.resourceComboOpen=true;updatePetResourceListDom();return;}
   const field=event.target.dataset.field;if(field==='creatureQuery'&&state.simulationEditor){state.simulationEditor.creatureQuery=event.target.value;state.simulationEditor.comboOpen=true;updatePetCreatureListDom();return;}if(field&&state.simulationEditor){updateEditorField(field,event.target.value,false);return;}
